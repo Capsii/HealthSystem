@@ -1,0 +1,313 @@
+<%
+    function formatDateOnly(value) {
+        if (!value) return '';
+        if (value instanceof Date) {
+            return [
+                value.getUTCFullYear(),
+                String(value.getUTCMonth() + 1).padStart(2, '0'),
+                String(value.getUTCDate()).padStart(2, '0')
+            ].join('-');
+        }
+        const match = String(value).match(/^\d{4}-\d{2}-\d{2}/);
+        return match ? match[0] : '';
+    }
+
+    function formatGender(value) {
+        const gender = String(value || '').trim().toLowerCase();
+        return gender ? gender.charAt(0).toUpperCase() + gender.slice(1) : 'N/A';
+    }
+
+    function todayDateOnly() {
+        const today = new Date();
+        return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    }
+
+    function filterRemovalUrl(removedKey) {
+        const params = new URLSearchParams();
+        Object.entries(query || {}).forEach(([key, value]) => {
+            if (key !== removedKey && key !== 'page' && value !== undefined && value !== '') {
+                params.set(key, String(value));
+            }
+        });
+        const search = params.toString();
+        return search ? `/patients?${search}` : '/patients';
+    }
+
+    const normalizedDirection = String(query.direction || 'desc').toLowerCase();
+    const activeFilterChips = [];
+    if (query.search) activeFilterChips.push({ key: 'search', label: `Search: ${query.search}` });
+    if (query.gender) activeFilterChips.push({ key: 'gender', label: `Gender: ${formatGender(query.gender)}` });
+    if (query.status && query.status !== 'active') {
+        const statusLabel = query.status === 'deleted' ? 'Deleted' : 'All records';
+        activeFilterChips.push({ key: 'status', label: `Status: ${statusLabel}` });
+    }
+    if (query.fromDate) activeFilterChips.push({ key: 'fromDate', label: `DOB from: ${query.fromDate}` });
+    if (query.toDate) activeFilterChips.push({ key: 'toDate', label: `DOB to: ${query.toDate}` });
+    if (query.sort && query.sort !== 'created_at') {
+        const sortLabel = query.sort === 'date_of_birth' ? 'Date of birth' : 'Name';
+        activeFilterChips.push({ key: 'sort', label: `Sort: ${sortLabel}` });
+    }
+    if (normalizedDirection === 'asc') {
+        activeFilterChips.push({ key: 'direction', label: 'Order: Ascending' });
+    }
+    if (query.pageSize && Number(query.pageSize) !== 25) {
+        activeFilterChips.push({ key: 'pageSize', label: `Rows: ${query.pageSize}` });
+    }
+    const listContextParams = new URLSearchParams();
+    ['search', 'gender', 'status', 'fromDate', 'toDate', 'sort', 'direction', 'pageSize'].forEach(key => {
+        if (query[key] !== undefined && query[key] !== '') {
+            listContextParams.set(key, String(query[key]));
+        }
+    });
+    if (pagination.page > 1) listContextParams.set('page', String(pagination.page));
+    const patientListContext = `/patients?${listContextParams.toString()}`;
+%>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Patients | Healthcare System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/patient-dashboard-refresh.css">
+    <link rel="stylesheet" href="/ui-modernization.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="/js/dexie.min.js"></script>
+    <script src="/js/db.js"></script>
+    <script src="/js/dashboard.js"></script>
+    <script src="/js/offline-access.js"></script>
+    <script src="/js/status.js"></script>
+    <script src="/js/sw-register.js"></script>
+    <script src="/js/patients.js" defer></script>
+    <script src="/js/ui.js" defer></script>
+    <% if (user.role === 'admin') { %><script src="/js/admin-recovery.js" defer></script><% } %>
+</head>
+<body class="patients-page" data-user-id="<%= user.id %>" data-user-name="<%= user.username %>" data-user-role="<%= user.role %>" data-csrf-token="<%= csrfToken %>" data-csv-max-bytes="<%= csvMaxBytes %>">
+    <div id="offlineBanner" class="dashboard-offline-banner" style="display:none;" role="status">You are offline. Only supported changes saved locally will synchronize later.</div>
+    <div class="dashboard-container">
+        <%- include('partials/sidebar', { activePage: 'patients' }) %>
+        <main class="main-content">
+            <header class="navbar">
+                <div class="page-title"><h3>Patient Management</h3></div>
+                <div class="user-controls">
+                    <div class="user-info">
+                        <span data-current-user><i class="fas fa-user-circle"></i> <%= user.username %> (<%= user.role %>)</span>
+                        <div id="connectionStatus" class="status-indicator"><div class="status-dot"></div><span id="statusText">Offline</span></div>
+                    </div>
+                </div>
+            </header>
+            <div class="content-wrapper fade-in">
+                <div id="offline-feedback" class="notice notice-warn" style="display:none;">
+                    <i class="fas fa-wifi"></i><span>Action saved on this device and queued for synchronization.</span>
+                </div>
+                <div class="section-header">
+                    <h3><%= query.status === 'deleted' ? 'Deleted Patients' : 'Patient List' %></h3>
+                </div>
+                <% if (error) { %>
+                    <div class="notice notice-error" role="alert"><%= error %></div>
+                <% } %>
+                <% if (message) { %>
+                    <div class="notice notice-error" role="alert"><%= message %></div>
+                <% } %>
+                <form action="/patients" method="GET" class="patient-filters">
+                    <div class="patient-toolbar">
+                        <label class="patient-search-box">
+                            <i class="fas fa-search" aria-hidden="true"></i>
+                            <span class="sr-only">Search by patient name, ID, or phone</span>
+                            <input type="search" name="search" placeholder="Search by patient name, ID, or phone" value="<%= query.search || '' %>" aria-label="Search by patient name, ID, or phone">
+                        </label>
+                        <button type="submit" class="btn-primary patient-search-submit"><i class="fas fa-search" aria-hidden="true"></i><span>Search</span></button>
+                        <details class="patient-filter-disclosure">
+                            <summary><i class="fas fa-sliders-h" aria-hidden="true"></i> Filters<% if (activeFilterChips.length) { %><span class="filter-count"><%= activeFilterChips.length %></span><% } %></summary>
+                            <div class="patient-filter-panel">
+                                <section class="patient-filter-group" aria-labelledby="patient-details-filter">
+                                    <h4 id="patient-details-filter">Patient details</h4>
+                                    <label for="filter_gender">Gender</label>
+                                    <select id="filter_gender" name="gender" class="form-control" aria-label="Filter by gender">
+                                        <option value="">All genders</option>
+                                        <option value="male" <%= query.gender === 'male' ? 'selected' : '' %>>Male</option>
+                                        <option value="female" <%= query.gender === 'female' ? 'selected' : '' %>>Female</option>
+                                        <option value="other" <%= query.gender === 'other' ? 'selected' : '' %>>Other</option>
+                                    </select>
+                                </section>
+                                <section class="patient-filter-group" aria-labelledby="patient-status-filter">
+                                    <h4 id="patient-status-filter">Record status</h4>
+                                    <label for="filter_status">Show records</label>
+                                    <select id="filter_status" name="status" class="form-control" aria-label="Filter by record status">
+                                        <option value="active" <%= (query.status || 'active') === 'active' ? 'selected' : '' %>>Active records</option>
+                                        <% if (user.role === 'admin') { %>
+                                            <option value="deleted" <%= query.status === 'deleted' ? 'selected' : '' %>>Deleted records</option>
+                                            <option value="all" <%= query.status === 'all' ? 'selected' : '' %>>All records</option>
+                                        <% } %>
+                                    </select>
+                                </section>
+                                <section class="patient-filter-group" aria-labelledby="patient-dob-filter">
+                                    <h4 id="patient-dob-filter">Date of birth</h4>
+                                    <div class="patient-date-range">
+                                        <label for="filter_from_date">From</label>
+                                        <input id="filter_from_date" type="date" name="fromDate" class="form-control" value="<%= query.fromDate || '' %>">
+                                        <label for="filter_to_date">To</label>
+                                        <input id="filter_to_date" type="date" name="toDate" class="form-control" value="<%= query.toDate || '' %>">
+                                    </div>
+                                </section>
+                                <section class="patient-filter-group" aria-labelledby="patient-display-filter">
+                                    <h4 id="patient-display-filter">Sort and display</h4>
+                                    <label for="filter_sort">Sort by</label>
+                                    <select id="filter_sort" name="sort" class="form-control" aria-label="Sort patients">
+                                        <option value="created_at" <%= (query.sort || 'created_at') === 'created_at' ? 'selected' : '' %>>Creation date</option>
+                                        <option value="name" <%= query.sort === 'name' ? 'selected' : '' %>>Name</option>
+                                        <option value="date_of_birth" <%= query.sort === 'date_of_birth' ? 'selected' : '' %>>Date of birth</option>
+                                    </select>
+                                    <div class="patient-display-options">
+                                        <label for="filter_direction">Order</label>
+                                        <select id="filter_direction" name="direction" class="form-control" aria-label="Sort direction">
+                                            <option value="desc" <%= normalizedDirection === 'desc' ? 'selected' : '' %>>Descending</option>
+                                            <option value="asc" <%= normalizedDirection === 'asc' ? 'selected' : '' %>>Ascending</option>
+                                        </select>
+                                        <label for="filter_page_size">Rows</label>
+                                        <select id="filter_page_size" name="pageSize" class="form-control" aria-label="Page size">
+                                            <% [10, 25, 50, 100].forEach(size => { %>
+                                                <option value="<%= size %>" <%= Number(query.pageSize || 25) === size ? 'selected' : '' %>><%= size %></option>
+                                            <% }); %>
+                                        </select>
+                                    </div>
+                                </section>
+                                <div class="patient-filter-actions">
+                                    <a href="/patients" class="btn-reset">Reset all</a>
+                                    <button type="submit" class="btn-primary filter-submit">Apply filters</button>
+                                </div>
+                            </div>
+                        </details>
+                        <% if (query.status !== 'deleted') { %>
+                            <button type="button" onclick="openModal('addPatientModal')" class="btn-add"><i class="fas fa-plus" aria-hidden="true"></i> Add Patient</button>
+                        <% } %>
+                        <details class="patient-export-menu">
+                            <summary><i class="fas fa-download" aria-hidden="true"></i> Export</summary>
+                            <div class="patient-export-options">
+                                <%
+                                    const exportFilters = new URLSearchParams();
+                                    ['search', 'gender', 'status', 'fromDate', 'toDate'].forEach(key => {
+                                        if (query[key]) exportFilters.set(key, String(query[key]));
+                                    });
+                                    exportFilters.set('scope', 'filtered');
+                                    const filteredExportUrl = `/patients/export.csv?${exportFilters.toString()}`;
+                                %>
+                                <button type="button" class="patient-export-action" data-csv-export="<%= filteredExportUrl %>">Export filtered results (all pages)</button>
+                                <button type="button" class="patient-export-action" data-csv-export="/patients/export.csv">Export all active records</button>
+                                <% if (user.role === 'admin') { %>
+                                    <button type="button" class="patient-export-action" data-csv-export="/patients/export.csv?includeDeleted=true">Export all records including deleted</button>
+                                <% } %>
+                                <p id="patientExportStatus" role="status" aria-live="polite"></p>
+                            </div>
+                        </details>
+                    </div>
+                    <% if (activeFilterChips.length) { %>
+                        <div class="active-filter-chips" aria-label="Applied filters">
+                            <span class="active-filter-label">Applied:</span>
+                            <% activeFilterChips.forEach(filter => { %>
+                                <a class="filter-chip" href="<%= filterRemovalUrl(filter.key) %>"><%= filter.label %><span aria-hidden="true"> ×</span><span class="sr-only"> Remove filter</span></a>
+                            <% }); %>
+                            <a class="clear-filter-link" href="/patients">Clear all</a>
+                        </div>
+                    <% } %>
+                </form>
+                <% if (user.role === 'admin') { %>
+                    <section class="recovery-card patient-csv-import" aria-labelledby="patient-csv-heading">
+                        <h4 id="patient-csv-heading">Import patients from CSV</h4>
+                        <p>Admin-only, online import. Preview validates the entire file; no records are saved until you confirm. Existing IDs and possible phone matches require correction or review.</p>
+                        <label for="csv-file">CSV file (maximum <%= csvMaxBytes.toLocaleString() %> bytes)</label>
+                        <input class="recovery-file" id="csv-file" type="file" accept=".csv,text/csv">
+                        <p id="csv-file-info" class="recovery-note" aria-live="polite">No file selected.</p>
+                        <div class="recovery-actions">
+                            <a class="btn-action" href="/admin/recovery/csv/template.csv">Download CSV template</a>
+                            <button class="btn-action" id="csv-preview" type="button">Preview CSV</button>
+                            <button class="btn-primary" id="csv-import" type="button" disabled>Import validated rows</button>
+                            <button class="btn-action" id="csv-errors" type="button" hidden>Download error report</button>
+                        </div>
+                        <div id="csv-status" class="recovery-result" role="status" aria-live="polite"></div>
+                    </section>
+                <% } %>
+
+                <p id="patientsLoading" class="notice notice-warn" role="status" hidden>Loading patient records...</p>
+                <p class="patient-counts" aria-live="polite">
+                    Showing <strong><%= counts.filtered %></strong> matching record(s) of <strong><%= counts.total %></strong> record(s) in this status
+                </p>
+                <div class="table-container" tabindex="0" role="region" aria-label="Patient records table">
+                    <table>
+                        <thead><tr><th>Name</th><th>Patient ID</th><th>Date of Birth</th><th>Gender</th><th>Phone</th><th>Status</th><th>Actions</th></tr></thead>
+                        <tbody id="patientsTable">
+                            <% if (error) { %>
+                                <tr><td colspan="7" class="table-message">Patient records are unavailable.</td></tr>
+                            <% } else if (!patients.length) { %>
+                                <tr><td colspan="7" class="table-message">No patients match these filters.</td></tr>
+                            <% } else { patients.forEach(patient => { %>
+                                <tr>
+                                    <td data-label="Name"><%= patient.full_name %></td>
+                                    <td data-label="Patient ID" class="patient-id-cell">
+                                        <code class="patient-id-value" title="<%= patient.id %>"><%= patient.id %></code>
+                                        <button class="patient-id-copy" type="button" data-copy-patient-id="<%= patient.id %>" aria-label="Copy full patient ID" title="Copy full patient ID"><i class="fas fa-copy" aria-hidden="true"></i></button>
+                                    </td>
+                                    <td data-label="Date of Birth"><%= formatDateOnly(patient.date_of_birth) || 'N/A' %></td>
+                                    <td data-label="Gender"><%= formatGender(patient.gender) %></td>
+                                    <td data-label="Phone"><%= patient.phone || 'N/A' %></td>
+                                    <td data-label="Status"><%= patient.is_deleted ? 'Deleted' : 'Active' %></td>
+                                    <td data-label="Actions">
+                                        <div class="patient-actions">
+                                        <a class="btn-action patient-action patient-action-profile" href="/patients/<%= encodeURIComponent(patient.id) %>?returnTo=<%= encodeURIComponent(patientListContext) %>">Profile</a>
+                                        <% if (patient.is_deleted && user.role === 'admin') { %>
+                                            <form method="POST" action="/patients/restore/<%= encodeURIComponent(patient.id) %>" class="inline-form" data-confirm="Restore <%= patient.full_name %>?" data-confirm-title="Restore patient record">
+                                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                <input type="hidden" name="version" value="<%= patient.version %>">
+                                                <input type="hidden" name="returnTo" value="<%= patientListContext %>">
+                                                <button class="btn-action patient-action patient-action-restore" type="submit">Restore</button>
+                                            </form>
+                                        <% } else if (!patient.is_deleted && user.role === 'admin') { %>
+                                            <button class="btn-action patient-action patient-action-delete" type="button" data-action="delete" data-id="<%= patient.id %>" data-version="<%= patient.version %>">Delete</button>
+                                        <% } %>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <% }); } %>
+                        </tbody>
+                    </table>
+                </div>
+                <nav class="pagination" aria-label="Patient pages">
+                    <span>Page <%= pagination.page %> of <%= pagination.pages %></span>
+                    <% if (pagination.page > 1) { %>
+                        <a href="/patients?<%= new URLSearchParams({ ...query, page: pagination.page - 1 }).toString() %>">Previous</a>
+                    <% } else { %><span class="pagination-disabled">Previous</span><% } %>
+                    <% if (pagination.page < pagination.pages) { %>
+                        <a href="/patients?<%= new URLSearchParams({ ...query, page: pagination.page + 1 }).toString() %>">Next</a>
+                    <% } else { %><span class="pagination-disabled">Next</span><% } %>
+                </nav>
+            </div>
+        </main>
+    </div>
+
+    <div id="addPatientModal" class="modal">
+        <div class="modal-content patient-modal-content" role="dialog" aria-modal="true" aria-labelledby="addPatientTitle" tabindex="-1">
+            <div class="modal-header"><h3 id="addPatientTitle">Add New Patient</h3><button type="button" class="close-btn" aria-label="Close add patient dialog" onclick="closeModal('addPatientModal')">Close</button></div>
+            <form id="addPatientForm" data-unsaved-warning="false">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="form-group"><label for="add_full_name">Full Name</label><input id="add_full_name" type="text" name="full_name" maxlength="255" class="form-control" required></div>
+                <div class="form-group"><label for="add_date_of_birth">Date of Birth</label><input id="add_date_of_birth" type="date" name="date_of_birth" max="<%= todayDateOnly() %>" class="form-control" required></div>
+                <div class="form-group"><label for="add_gender">Gender</label><select id="add_gender" name="gender" class="form-control" required><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option></select></div>
+                <div class="form-group"><label for="add_phone">Phone Number</label><input id="add_phone" type="tel" name="phone" maxlength="30" class="form-control" required></div>
+                <div class="form-group"><label for="add_address">Address</label><input id="add_address" type="text" name="address" maxlength="2000" class="form-control" required></div>
+                <fieldset class="patient-clinical-fields">
+                    <legend>Emergency Contact (optional)</legend>
+                    <div class="form-group"><label for="add_emergency_contact_name">Contact Name</label><input id="add_emergency_contact_name" type="text" name="emergency_contact_name" maxlength="255" class="form-control"></div>
+                    <div class="form-group"><label for="add_emergency_contact_relationship">Relationship</label><input id="add_emergency_contact_relationship" type="text" name="emergency_contact_relationship" maxlength="100" class="form-control"></div>
+                    <div class="form-group"><label for="add_emergency_contact_phone">Contact Phone</label><input id="add_emergency_contact_phone" type="tel" name="emergency_contact_phone" maxlength="30" class="form-control"></div>
+                </fieldset>
+                <div class="form-group"><label for="add_allergies">Allergies</label><textarea id="add_allergies" name="allergies" maxlength="10000" rows="3" class="form-control"></textarea></div>
+                <div class="form-group"><label for="add_medical_history">Medical History</label><textarea id="add_medical_history" name="medical_history" maxlength="10000" rows="4" class="form-control"></textarea></div>
+                <div class="form-group"><label for="add_medications">Medications</label><textarea id="add_medications" name="medications" maxlength="10000" rows="3" class="form-control"></textarea></div>
+                <button type="submit" class="btn-primary">Save Patient</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

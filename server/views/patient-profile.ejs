@@ -1,0 +1,390 @@
+<%
+    function dateOnly(value) {
+        if (!value) return 'Not recorded';
+        if (value instanceof Date) return value.toISOString().slice(0, 10);
+        const match = String(value).match(/^\d{4}-\d{2}-\d{2}/);
+        return match ? match[0] : 'Not recorded';
+    }
+    function dateTime(value) {
+        if (!value) return 'Not recorded';
+        const text = String(value);
+        const date = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(text)
+            ? `${text.replace(' ', 'T')}Z`
+            : text);
+        return Number.isNaN(date.getTime())
+            ? 'Not recorded'
+            : `${date.toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC`;
+    }
+    function display(value) {
+        return value && String(value).trim() ? value : 'Not recorded';
+    }
+    function todayDateOnly() {
+        const today = new Date();
+        return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    }
+    const missingFields = completenessWarnings || [];
+%>
+<!DOCTYPE html>
+<html>
+<head>
+    <title><%= patient ? `${patient.full_name} | Patient Profile` : 'Patient Profile' %> | HealthSys</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/ui-modernization.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="/js/dexie.min.js"></script>
+    <script src="/js/db.js"></script>
+    <script src="/js/offline-access.js"></script>
+    <script src="/js/status.js"></script>
+    <script src="/js/ui.js" defer></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <% if (query && query.updated === '1') { %>
+        <script>
+            if ('BroadcastChannel' in window) {
+                new BroadcastChannel('healthsys-records').postMessage('changed');
+            }
+        </script>
+    <% } %>
+</head>
+<body class="patient-profile-page" data-user-id="<%= user.id %>" data-user-name="<%= user.username %>" data-user-role="<%= user.role %>" data-csrf-token="<%= csrfToken %>">
+    <div class="dashboard-container">
+        <%- include('partials/sidebar', { activePage: 'patients' }) %>
+        <main class="main-content">
+            <header class="navbar">
+                <div class="page-title"><h3>Patient Profile</h3></div>
+                <div class="user-controls"><a class="btn-reset" href="<%= returnTo || '/patients' %>">Back to patients</a></div>
+            </header>
+            <div class="content-wrapper fade-in">
+                <% if (error && !patient) { %>
+                    <div class="notice notice-error" role="alert"><%= error %></div>
+                <% } else if (patient) { %>
+                    <% if (error) { %><div class="notice notice-error" role="alert"><%= error %></div><% } %>
+                    <% if (query && query.appointment === 'scheduled') { %><div class="notice notice-success" role="status">Appointment scheduled.</div><% } %>
+                    <section id="patientSummary" class="patient-profile-summary">
+                        <div class="profile-heading">
+                            <div>
+                                <h1><%= patient.full_name %></h1>
+                                <p>Patient ID: <%= patient.id %> · Record status: <strong><%= patient.is_deleted ? 'Deleted' : 'Active' %></strong></p>
+                                <p class="profile-generated-at">Summary generated <%= dateTime(generatedAt || new Date()) %></p>
+                            </div>
+                            <button type="button" class="btn-primary no-print" onclick="window.print()">Print patient summary</button>
+                        </div>
+                        <% if (missingFields.length) { %>
+                            <p class="profile-completeness-warning" role="status">Record completeness is based on the required registration fields: Name, Date of birth, Gender, Phone, and Address. Missing: <%= missingFields.join(', ') %>.</p>
+                        <% } %>
+                        <div class="profile-grid">
+                            <article class="profile-card">
+                                <h2>Patient details</h2>
+                                <dl>
+                                    <dt>Date of birth</dt><dd><%= dateOnly(patient.date_of_birth) %></dd>
+                                    <dt>Gender</dt><dd><%= patient.gender || 'Not recorded' %></dd>
+                                    <dt>Phone</dt><dd><%= display(patient.phone) %></dd>
+                                    <dt>Address</dt><dd><%= display(patient.address) %></dd>
+                                    <dt>Created</dt><dd><%= dateTime(patient.created_at) %></dd>
+                                    <dt>Last updated</dt><dd><%= dateTime(patient.updated_at) %></dd>
+                                </dl>
+                            </article>
+                            <article class="profile-card">
+                                <h2>Emergency contact</h2>
+                                <dl>
+                                    <dt>Name</dt><dd><%= display(patient.emergency_contact_name) %></dd>
+                                    <dt>Relationship</dt><dd><%= display(patient.emergency_contact_relationship) %></dd>
+                                    <dt>Phone</dt><dd><%= display(patient.emergency_contact_phone) %></dd>
+                                </dl>
+                            </article>
+                            <article class="profile-card"><h2>Allergies</h2><p class="pre-wrap"><%= display(patient.allergies) %></p></article>
+                            <article class="profile-card"><h2>Medical history</h2><p class="pre-wrap"><%= display(patient.medical_history) %></p></article>
+                            <article class="profile-card"><h2>Medications</h2><p class="pre-wrap"><%= display(patient.medications) %></p></article>
+                        </div>
+                        <section class="profile-card profile-section">
+                            <h2>Visit history</h2>
+                            <% if (latestVitals) { %>
+                                <aside class="latest-vitals-summary" aria-label="Most recent patient measurements">
+                                    <h3>Latest recorded measurements</h3>
+                                    <p>From visit <%= dateOnly(latestVitals.visit_date) %> · <%= dateTime(latestVitals.recorded_at) %>. Earlier readings remain in visit history.</p>
+                                    <dl>
+                                        <% if (latestVitals.systolic_mmhg !== null && latestVitals.diastolic_mmhg !== null) { %><dt>Blood pressure</dt><dd><%= latestVitals.systolic_mmhg %>/<%= latestVitals.diastolic_mmhg %> mmHg</dd><% } %>
+                                        <% if (latestVitals.pulse_bpm !== null) { %><dt>Pulse</dt><dd><%= latestVitals.pulse_bpm %> bpm</dd><% } %>
+                                        <% if (latestVitals.temperature_celsius !== null) { %><dt>Temperature</dt><dd><%= latestVitals.temperature_celsius %> °C</dd><% } %>
+                                        <% if (latestVitals.respiratory_rate_per_minute !== null) { %><dt>Respiratory rate</dt><dd><%= latestVitals.respiratory_rate_per_minute %>/min</dd><% } %>
+                                        <% if (latestVitals.oxygen_saturation_percent !== null) { %><dt>Oxygen saturation</dt><dd><%= latestVitals.oxygen_saturation_percent %>%</dd><% } %>
+                                        <% if (latestVitals.height_cm !== null) { %><dt>Height</dt><dd><%= latestVitals.height_cm %> cm</dd><% } %>
+                                        <% if (latestVitals.weight_kg !== null) { %><dt>Weight</dt><dd><%= latestVitals.weight_kg %> kg</dd><% } %>
+                                    </dl>
+                                </aside>
+                            <% } %>
+                            <% if (visitsError) { %>
+                                <p class="notice notice-error" role="alert">Visit history is temporarily unavailable. Patient details remain available; try reloading the visit section.</p>
+                            <% } else if (!visits.length) { %>
+                                <p>No visits have been recorded.</p>
+                            <% } else { %>
+                                <div class="table-container" tabindex="0" role="region" aria-label="Visit history for <%= patient.full_name %>"><table>
+                                    <thead><tr><th>Date and status</th><th>Visit and attending staff</th><th>Consultation</th><th>Vitals and history</th></tr></thead>
+                                    <tbody><% visits.forEach(visit => { %>
+                                        <tr>
+                                            <td>
+                                                <strong><%= dateOnly(visit.visit_date) %></strong>
+                                                <div><span class="appointment-status"><%= visit.status === 'in_progress' ? 'In progress' : 'Completed' %></span></div>
+                                                <small>Recorded <%= dateTime(visit.created_at) %> by <%= visit.created_by_name || 'Author not recorded' %></small>
+                                                <% if (visit.updated_at && visit.updated_at !== visit.created_at) { %><small>Updated <%= dateTime(visit.updated_at) %> by <%= visit.updated_by_name || 'Author not recorded' %></small><% } %>
+                                            </td>
+                                            <td>
+                                                <strong><%= display(visit.visit_type) %></strong>
+                                                <p><%= display(visit.reason) %></p>
+                                                <small>Attending: <%= visit.attending_name || 'Not recorded' %></small>
+                                            </td>
+                                            <td class="pre-wrap">
+                                                <% if (visit.assessment) { %><strong>Assessment</strong><p><%= visit.assessment %></p><% } %>
+                                                <% if (visit.diagnosis) { %><strong>Diagnosis</strong><p><%= visit.diagnosis %></p><% } %>
+                                                <% if (visit.treatment_plan) { %><strong>Treatment plan</strong><p><%= visit.treatment_plan %></p><% } %>
+                                                <% if (visit.notes) { %><strong>Notes</strong><p><%= visit.notes %></p><% } %>
+                                                <% if (!visit.assessment && !visit.diagnosis && !visit.treatment_plan && !visit.notes) { %><span>None recorded</span><% } %>
+                                            </td>
+                                            <td class="visit-vitals-cell">
+                                                <% if (visit.vitals.length) { %>
+                                                    <% visit.vitals.forEach((vital, index) => { %>
+                                                        <details class="visit-vitals">
+                                                            <summary><%= index === 0 ? 'Latest measurements' : `Historical readings · ${dateTime(vital.recorded_at)}` %></summary>
+                                                            <dl>
+                                                                <% if (vital.systolic_mmhg !== null && vital.diastolic_mmhg !== null) { %><dt>Blood pressure</dt><dd><%= vital.systolic_mmhg %>/<%= vital.diastolic_mmhg %> mmHg</dd><% } %>
+                                                                <% if (vital.pulse_bpm !== null) { %><dt>Pulse</dt><dd><%= vital.pulse_bpm %> bpm</dd><% } %>
+                                                                <% if (vital.temperature_celsius !== null) { %><dt>Temperature</dt><dd><%= vital.temperature_celsius %> °C</dd><% } %>
+                                                                <% if (vital.respiratory_rate_per_minute !== null) { %><dt>Respiratory rate</dt><dd><%= vital.respiratory_rate_per_minute %>/min</dd><% } %>
+                                                                <% if (vital.oxygen_saturation_percent !== null) { %><dt>Oxygen saturation</dt><dd><%= vital.oxygen_saturation_percent %>%</dd><% } %>
+                                                                <% if (vital.height_cm !== null) { %><dt>Height</dt><dd><%= vital.height_cm %> cm</dd><% } %>
+                                                                <% if (vital.weight_kg !== null) { %><dt>Weight</dt><dd><%= vital.weight_kg %> kg</dd><% } %>
+                                                            </dl>
+                                                            <small>Recorded <%= dateTime(vital.recorded_at) %> by <%= vital.author_name || 'Author not recorded' %></small>
+                                                        </details>
+                                                    <% }); %>
+                                                <% } else { %><span>No measurements recorded</span><% } %>
+                                                <% if (visit.events.length) { %>
+                                                    <details class="visit-audit-history">
+                                                        <summary>Change history (<%= visit.events.length %>)</summary>
+                                                        <ol><% visit.events.forEach(event => { %>
+                                                            <li><strong><%= event.event_type === 'created' ? 'Visit recorded' : 'Visit updated' %></strong> · <%= event.actor_name || 'Author not recorded' %> · <%= dateTime(event.created_at) %>
+                                                                <details><summary>View saved revision</summary><pre><%= JSON.stringify(event.details, null, 2) %></pre></details>
+                                                            </li>
+                                                        <% }); %></ol>
+                                                    </details>
+                                                <% } %>
+                                                <% if (!patient.is_deleted && ['admin', 'staff'].includes(user.role)) { %>
+                                                    <details class="visit-edit-details no-print">
+                                                        <summary>Edit visit</summary>
+                                                        <form method="POST" action="/patients/visits/<%= encodeURIComponent(visit.id) %>/edit" class="profile-form-grid">
+                                                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                            <input type="hidden" name="returnTo" value="<%= returnTo || '/patients' %>">
+                                                            <input type="hidden" name="patient_id" value="<%= patient.id %>">
+                                                            <input type="hidden" name="version" value="<%= visit.version %>">
+                                                            <div class="form-group"><label for="visitDate-<%= visit.id %>">Visit date</label><input class="form-control" id="visitDate-<%= visit.id %>" type="date" name="visit_date" max="<%= todayDateOnly() %>" value="<%= dateOnly(visit.visit_date) %>" required></div>
+                                                            <div class="form-group"><label for="visitType-<%= visit.id %>">Visit type</label><input class="form-control" id="visitType-<%= visit.id %>" name="visit_type" maxlength="100" value="<%= visit.visit_type || '' %>"></div>
+                                                            <div class="form-group"><label for="visitStatus-<%= visit.id %>">Status</label><select class="form-control" id="visitStatus-<%= visit.id %>" name="status"><option value="completed" <%= visit.status !== 'in_progress' ? 'selected' : '' %>>Completed</option><option value="in_progress" <%= visit.status === 'in_progress' ? 'selected' : '' %>>In progress</option></select></div>
+                                                            <div class="form-group"><label for="visitReason-<%= visit.id %>">Reason</label><input class="form-control" id="visitReason-<%= visit.id %>" name="reason" maxlength="2000" value="<%= visit.reason || '' %>"></div>
+                                                            <div class="form-group"><label for="visitNotes-<%= visit.id %>">Consultation notes</label><textarea class="form-control" id="visitNotes-<%= visit.id %>" name="notes" rows="3" maxlength="10000"><%= visit.notes || '' %></textarea></div>
+                                                            <div class="form-group"><label for="visitAssessment-<%= visit.id %>">Assessment</label><textarea class="form-control" id="visitAssessment-<%= visit.id %>" name="assessment" rows="3" maxlength="10000"><%= visit.assessment || '' %></textarea></div>
+                                                            <div class="form-group"><label for="visitDiagnosis-<%= visit.id %>">Diagnosis</label><textarea class="form-control" id="visitDiagnosis-<%= visit.id %>" name="diagnosis" rows="2" maxlength="5000"><%= visit.diagnosis || '' %></textarea></div>
+                                                            <div class="form-group"><label for="visitPlan-<%= visit.id %>">Treatment plan</label><textarea class="form-control" id="visitPlan-<%= visit.id %>" name="treatment_plan" rows="3" maxlength="10000"><%= visit.treatment_plan || '' %></textarea></div>
+                                                            <fieldset class="visit-vitals-form">
+                                                                <legend>Add a new vital-sign reading (previous readings remain unchanged)</legend>
+                                                                <% const vitalInputs = [['systolic_mmhg', 'Systolic pressure (mmHg)', '40', '300', '1'], ['diastolic_mmhg', 'Diastolic pressure (mmHg)', '20', '200', '1'], ['pulse_bpm', 'Pulse (bpm)', '20', '300', '1'], ['temperature_celsius', 'Temperature (°C)', '25', '45', '0.1'], ['respiratory_rate_per_minute', 'Respiratory rate (/min)', '4', '80', '1'], ['oxygen_saturation_percent', 'Oxygen saturation (%)', '40', '100', '0.1'], ['height_cm', 'Height (cm)', '20', '250', '0.01'], ['weight_kg', 'Weight (kg)', '0.2', '500', '0.01']]; %>
+                                                                <% vitalInputs.forEach(([name, label, min, max, step]) => { %>
+                                                                    <div class="form-group"><label for="<%= name %>-<%= visit.id %>"><%= label %></label><input class="form-control" id="<%= name %>-<%= visit.id %>" type="number" name="<%= name %>" min="<%= min %>" max="<%= max %>" step="<%= step %>"></div>
+                                                                <% }); %>
+                                                            </fieldset>
+                                                            <button class="btn-primary" type="submit">Save visit revision</button>
+                                                        </form>
+                                                    </details>
+                                                <% } %>
+                                            </td>
+                                        </tr>
+                                    <% }); %></tbody>
+                                </table></div>
+                                <% if (visitPagination && visitPagination.pages > 1) { %>
+                                    <nav class="appointment-pagination" aria-label="Visit history pages">
+                                        <% if (visitPagination.page > 1) { %><a class="btn-reset" href="?visitsPage=<%= visitPagination.page - 1 %><%= returnTo && returnTo !== '/patients' ? `&returnTo=${encodeURIComponent(returnTo)}` : '' %>">Previous visits</a><% } %>
+                                        <span aria-live="polite">Page <%= visitPagination.page %> of <%= visitPagination.pages %> · <%= visitPagination.total %> visits</span>
+                                        <% if (visitPagination.page < visitPagination.pages) { %><a class="btn-reset" href="?visitsPage=<%= visitPagination.page + 1 %><%= returnTo && returnTo !== '/patients' ? `&returnTo=${encodeURIComponent(returnTo)}` : '' %>">Next visits</a><% } %>
+                                    </nav>
+                                <% } %>
+                            <% } %>
+                            <% if (!patient.is_deleted && ['admin', 'staff'].includes(user.role)) { %>
+                                <details class="visit-entry no-print">
+                                    <summary>Record a visit</summary>
+                                    <form method="POST" action="/patients/visits/add/<%= encodeURIComponent(patient.id) %>" class="profile-form-grid">
+                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                        <input type="hidden" name="returnTo" value="<%= returnTo || '/patients' %>">
+                                        <div class="form-group"><label for="newVisitDate">Visit date</label><input class="form-control" id="newVisitDate" type="date" name="visit_date" max="<%= todayDateOnly() %>" required></div>
+                                        <div class="form-group"><label for="newVisitType">Visit type</label><input class="form-control" id="newVisitType" name="visit_type" maxlength="100"></div>
+                                        <div class="form-group"><label for="newVisitStatus">Status</label><select class="form-control" id="newVisitStatus" name="status"><option value="completed">Completed</option><option value="in_progress">In progress</option></select></div>
+                                        <div class="form-group"><label for="newVisitReason">Reason</label><input class="form-control" id="newVisitReason" name="reason" maxlength="2000"></div>
+                                        <div class="form-group"><label for="newVisitNotes">Consultation notes</label><textarea class="form-control" id="newVisitNotes" name="notes" rows="3" maxlength="10000"></textarea></div>
+                                        <div class="form-group"><label for="newVisitAssessment">Assessment</label><textarea class="form-control" id="newVisitAssessment" name="assessment" rows="3" maxlength="10000"></textarea></div>
+                                        <div class="form-group"><label for="newVisitDiagnosis">Diagnosis</label><textarea class="form-control" id="newVisitDiagnosis" name="diagnosis" rows="2" maxlength="5000"></textarea></div>
+                                        <div class="form-group"><label for="newVisitPlan">Treatment plan</label><textarea class="form-control" id="newVisitPlan" name="treatment_plan" rows="3" maxlength="10000"></textarea></div>
+                                        <% const newVitalInputs = [['systolic_mmhg', 'Systolic pressure (mmHg)', '40', '300', '1'], ['diastolic_mmhg', 'Diastolic pressure (mmHg)', '20', '200', '1'], ['pulse_bpm', 'Pulse (bpm)', '20', '300', '1'], ['temperature_celsius', 'Temperature (°C)', '25', '45', '0.1'], ['respiratory_rate_per_minute', 'Respiratory rate (/min)', '4', '80', '1'], ['oxygen_saturation_percent', 'Oxygen saturation (%)', '40', '100', '0.1'], ['height_cm', 'Height (cm)', '20', '250', '0.01'], ['weight_kg', 'Weight (kg)', '0.2', '500', '0.01']]; %>
+                                        <fieldset class="visit-vitals-form">
+                                            <legend>Vital signs (optional)</legend>
+                                            <% newVitalInputs.forEach(([name, label, min, max, step]) => { %>
+                                                <div class="form-group"><label for="new-<%= name %>"><%= label %></label><input class="form-control" id="new-<%= name %>" type="number" name="<%= name %>" min="<%= min %>" max="<%= max %>" step="<%= step %>"></div>
+                                            <% }); %>
+                                        </fieldset>
+                                        <button class="btn-primary" type="submit">Save visit</button>
+                                    </form>
+                                </details>
+                            <% } %>
+                        </section>
+                    </section>
+                    <section class="profile-card profile-section appointment-profile-section no-print" aria-labelledby="patientAppointmentsHeading">
+                        <div class="appointment-list-heading">
+                            <div>
+                                <h2 id="patientAppointmentsHeading">Appointments</h2>
+                                <p>Appointment times are stored and displayed in UTC.</p>
+                            </div>
+                            <a class="btn-reset" href="/appointments?search=<%= encodeURIComponent(patient.id) %>">Open appointment list</a>
+                        </div>
+                        <% if (!appointments || !appointments.length) { %>
+                            <p>No appointments are recorded for this patient.</p>
+                        <% } else { %>
+                            <div class="appointment-profile-list">
+                                <% appointments.forEach(appointment => { %>
+                                    <article class="appointment-profile-item" id="appointment-<%= encodeURIComponent(appointment.id) %>">
+                                        <div class="appointment-profile-summary">
+                                            <div>
+                                                <strong><%= dateOnly(appointment.start_at_utc) %> · <%= String(appointment.start_at_utc).slice(11, 16) %> UTC</strong>
+                                                <span><%= appointment.duration_minutes %> minutes · <%= appointment.staff_name %></span>
+                                                <p><%= display(appointment.reason) %></p>
+                                            </div>
+                                            <span class="appointment-status appointment-status-<%= appointment.status %>"><%= appointment.status === 'scheduled' ? 'Upcoming' : appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1) %></span>
+                                        </div>
+                                        <% if (appointment.events && appointment.events.length) { %>
+                                            <details class="appointment-history">
+                                                <summary>Appointment history (<%= appointment.events.length %>)</summary>
+                                                <ol class="activity-list">
+                                                    <% appointment.events.forEach(event => { %>
+                                                        <li><strong><%= event.eventLabel %></strong><span><%= event.actor_name || 'Former staff account' %> · <%= dateTime(event.created_at) %></span></li>
+                                                    <% }); %>
+                                                </ol>
+                                            </details>
+                                        <% } %>
+                                    </article>
+                                <% }); %>
+                            </div>
+                        <% } %>
+                        <% if (!patient.is_deleted && ['admin', 'staff'].includes(user.role)) { %>
+                            <details class="appointment-schedule-details">
+                                <summary class="btn-primary">Schedule appointment</summary>
+                                <form method="POST" action="/appointments/create" class="appointment-create-form" data-unsaved-warning="true">
+                                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                    <input type="hidden" name="return_to" value="/patients/<%= encodeURIComponent(patient.id) %>">
+                                    <input type="hidden" name="patient_id" value="<%= patient.id %>">
+                                    <input type="hidden" name="operation_id" value="<%= appointmentOperationId %>">
+                                    <% if (user.role === 'admin') { %>
+                                        <div class="form-group">
+                                            <label for="appointmentStaff">Assigned clinician / staff</label>
+                                            <select class="form-control" id="appointmentStaff" name="assigned_staff_id" required>
+                                                <option value="">Select staff member</option>
+                                                <% staff.forEach(member => { %>
+                                                    <option value="<%= member.id %>"><%= member.username %></option>
+                                                <% }); %>
+                                            </select>
+                                        </div>
+                                    <% } %>
+                                    <div class="form-group">
+                                        <label for="appointmentDate">Date (UTC)</label>
+                                        <input class="form-control" id="appointmentDate" type="date" name="appointment_date" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="appointmentTime">Start time (UTC)</label>
+                                        <input class="form-control" id="appointmentTime" type="time" name="start_time" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="appointmentDuration">Duration</label>
+                                        <input class="form-control" id="appointmentDuration" type="number" name="duration_minutes" min="5" max="240" step="5" value="30" required>
+                                    </div>
+                                    <div class="form-group appointment-reason-field">
+                                        <label for="appointmentReason">Purpose / reason</label>
+                                        <input class="form-control" id="appointmentReason" name="reason" maxlength="500" placeholder="Optional">
+                                    </div>
+                                    <button class="btn-primary" type="submit">Save appointment</button>
+                                </form>
+                            </details>
+                        <% } %>
+                    </section>
+                    <section class="profile-card profile-section no-print">
+                        <h2>Patient notes</h2>
+                        <p class="profile-note-policy">Notes are append-only and recorded with the signed-in author. Adding notes requires a connection.</p>
+                        <% if (!notes || !notes.length) { %>
+                            <p>No notes have been recorded.</p>
+                        <% } else { %>
+                            <ol class="activity-list"><% notes.forEach(note => { %>
+                                <li><p class="pre-wrap"><%= note.note %></p>
+                                    <span><%= note.author_name %> · <%= dateTime(note.created_at) %></span>
+                                </li>
+                            <% }); %></ol>
+                        <% } %>
+                        <% if (!patient.is_deleted && ['admin', 'staff'].includes(user.role)) { %>
+                            <form method="POST" action="/patients/notes/add/<%= encodeURIComponent(patient.id) %>" class="profile-note-form">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                <input type="hidden" name="returnTo" value="<%= returnTo || '/patients' %>">
+                                <label for="patientNote">Add a note</label>
+                                <textarea id="patientNote" class="form-control" name="note" rows="4" maxlength="10000" required></textarea>
+                                <button class="btn-primary" type="submit">Add note</button>
+                            </form>
+                        <% } %>
+                    </section>
+                    <% if (patient.is_deleted && user.role === 'admin') { %>
+                        <form method="POST" action="/patients/restore/<%= encodeURIComponent(patient.id) %>" class="profile-section no-print" data-confirm="Restore <%= patient.full_name %>?" data-confirm-title="Restore patient record">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <button class="btn-primary" type="submit">Restore patient</button>
+                            <input type="hidden" name="returnTo" value="<%= returnTo || '/patients' %>">
+                            <input type="hidden" name="profileReturn" value="true">
+                        </form>
+                    <% } %>
+                    <% if (!patient.is_deleted && ['admin', 'staff'].includes(user.role)) { %>
+                        <details class="profile-section no-print">
+                            <summary class="profile-card profile-edit-summary">Edit patient record</summary>
+                            <form method="POST" action="/patients/edit/<%= encodeURIComponent(patient.id) %>" class="profile-card profile-edit-form">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                <input type="hidden" name="version" value="<%= patient.version %>">
+                                <input type="hidden" name="returnTo" value="<%= returnTo || '/patients' %>">
+                                <div class="profile-form-grid">
+                                    <div class="form-group"><label>Full name</label><input class="form-control" name="full_name" maxlength="255" value="<%= patient.full_name %>" required></div>
+                                    <div class="form-group"><label>Date of birth</label><input class="form-control" type="date" name="date_of_birth" max="<%= todayDateOnly() %>" value="<%= dateOnly(patient.date_of_birth) === 'Not recorded' ? '' : dateOnly(patient.date_of_birth) %>" required></div>
+                                    <div class="form-group"><label>Gender</label><select class="form-control" name="gender" required>
+                                        <option value="male" <%= String(patient.gender).toLowerCase() === 'male' ? 'selected' : '' %>>Male</option>
+                                        <option value="female" <%= String(patient.gender).toLowerCase() === 'female' ? 'selected' : '' %>>Female</option>
+                                        <option value="other" <%= String(patient.gender).toLowerCase() === 'other' ? 'selected' : '' %>>Other</option>
+                                    </select></div>
+                                    <div class="form-group"><label>Phone</label><input class="form-control" type="tel" name="phone" maxlength="30" value="<%= patient.phone || '' %>" required></div>
+                                    <div class="form-group"><label>Address</label><input class="form-control" name="address" maxlength="2000" value="<%= patient.address || '' %>" required></div>
+                                    <div class="form-group"><label>Emergency contact name</label><input class="form-control" name="emergency_contact_name" maxlength="255" value="<%= patient.emergency_contact_name || '' %>"></div>
+                                    <div class="form-group"><label>Emergency contact relationship</label><input class="form-control" name="emergency_contact_relationship" maxlength="100" value="<%= patient.emergency_contact_relationship || '' %>"></div>
+                                    <div class="form-group"><label>Emergency contact phone</label><input class="form-control" type="tel" name="emergency_contact_phone" maxlength="30" value="<%= patient.emergency_contact_phone || '' %>"></div>
+                                    <div class="form-group"><label>Allergies</label><textarea class="form-control" name="allergies" rows="3"><%= patient.allergies || '' %></textarea></div>
+                                    <div class="form-group"><label>Medical history</label><textarea class="form-control" name="medical_history" rows="3"><%= patient.medical_history || '' %></textarea></div>
+                                    <div class="form-group"><label>Medications</label><textarea class="form-control" name="medications" rows="3"><%= patient.medications || '' %></textarea></div>
+                                </div>
+                                <button class="btn-primary" type="submit">Save changes</button>
+                            </form>
+                        </details>
+                    <% } %>
+                    <section class="profile-card profile-section">
+                        <h2>Record activity</h2>
+                        <% if (!activity.length) { %>
+                            <p>No activity has been recorded.</p>
+                        <% } else { %>
+                            <ol class="activity-list"><% activity.forEach(item => { %>
+                                <li><strong><%= item.action.charAt(0).toUpperCase() + item.action.slice(1) %></strong>
+                                    <span><%= item.username || 'System' %><%= item.actorRole ? ` (${item.actorRole})` : '' %> · <%= dateTime(item.created_at) %></span>
+                                    <% if (item.details) { %><p><%= item.details %></p><% } %>
+                                    <% if (item.action === 'sync conflict') { %><p role="status">A queued operation conflicted. No server patient change was applied.</p><% } else if (item.source === 'sync') { %><p>Server-confirmed synchronization</p><% } %>
+                                </li>
+                            <% }); %></ol>
+                        <% } %>
+                    </section>
+                <% } %>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

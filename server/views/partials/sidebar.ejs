@@ -1,0 +1,85 @@
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <span class="sidebar-brand">
+      <i class="fas fa-heartbeat" aria-hidden="true"></i>
+      <span class="sidebar-brand-name">HealthSys</span>
+    </span>
+    <button
+      type="button"
+      class="sidebar-toggle"
+      data-sidebar-toggle
+      aria-label="Collapse navigation"
+      aria-expanded="true"
+      title="Collapse navigation"
+    >
+      <i class="fas fa-chevron-left" aria-hidden="true"></i>
+    </button>
+  </div>
+  <nav class="sidebar-nav" aria-label="Main navigation">
+    <a
+      href="/dashboard"
+      class="nav-item<%= activePage === 'dashboard' ? ' active' : '' %>"
+      aria-current="<%= activePage === 'dashboard' ? 'page' : 'false' %>"
+      aria-label="Dashboard"
+      title="Dashboard"
+      ><i class="fas fa-th-large" aria-hidden="true"></i
+      ><span class="nav-label">Dashboard</span></a
+    >
+    <a
+      href="/patients"
+      class="nav-item<%= activePage === 'patients' ? ' active' : '' %>"
+      aria-current="<%= activePage === 'patients' ? 'page' : 'false' %>"
+      aria-label="Patients"
+      title="Patients"
+      ><i class="fas fa-user-injured" aria-hidden="true"></i
+      ><span class="nav-label">Patients</span></a
+    >
+    <a
+      href="/appointments"
+      class="nav-item<%= activePage === 'appointments' ? ' active' : '' %>"
+      aria-current="<%= activePage === 'appointments' ? 'page' : 'false' %>"
+      aria-label="Appointments"
+      title="Appointments"
+      ><i class="fas fa-calendar-check" aria-hidden="true"></i
+      ><span class="nav-label">Appointments</span></a
+    >
+    <% if (user.role === 'admin') { %>
+    <a
+      href="/admin/staff"
+      class="nav-item<%= activePage === 'staff' ? ' active' : '' %>"
+      aria-current="<%= activePage === 'staff' ? 'page' : 'false' %>"
+      aria-label="Staff"
+      title="Staff"
+      ><i class="fas fa-user-md" aria-hidden="true"></i
+      ><span class="nav-label">Staff</span></a
+    >
+    <a
+      href="/admin/reports"
+      class="nav-item<%= activePage === 'reports' ? ' active' : '' %>"
+      aria-current="<%= activePage === 'reports' ? 'page' : 'false' %>"
+      aria-label="Reports"
+      title="Reports"
+      ><i class="fas fa-chart-bar" aria-hidden="true"></i
+      ><span class="nav-label">Reports</span></a
+    >
+    <a
+      href="/admin/recovery"
+      class="nav-item<%= activePage === 'recovery' ? ' active' : '' %>"
+      aria-current="<%= activePage === 'recovery' ? 'page' : 'false' %>"
+      aria-label="Data recovery"
+      title="Data recovery"
+      ><i class="fas fa-database" aria-hidden="true"></i
+      ><span class="nav-label">Data recovery</span></a
+    >
+    <% } %>
+    <a
+      href="/account/password"
+      class="nav-item<%= activePage === 'password' ? ' active' : '' %>"
+      aria-current="<%= activePage === 'password' ? 'page' : 'false' %>"
+      aria-label="Change Password"
+      title="Change Password"
+      ><i class="fas fa-key" aria-hidden="true"></i
+      ><span class="nav-label">Change Password</span></a
+    >
+  </nav>
+</aside>

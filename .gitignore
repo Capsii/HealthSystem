@@ -1,0 +1,6 @@
+.env
+server/cert/*-key.pem
+server/cert/localhost-dev-cert.pem
+node_modules/
+.env.example
+cloudflared-windows-amd64.exe

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Data Recovery | HealthSys</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#2563eb" />
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="stylesheet" href="/style.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+        <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        />
+        <script src="/js/dexie.min.js"></script>
+        <script src="/js/db.js"></script>
+        <script src="/js/offline-access.js"></script>
+        <script src="/js/status.js"></script>
+        <script src="/js/sw-register.js"></script>
+        <script src="/js/ui.js" defer></script>
+        <script src="/js/admin-recovery.js" defer></script>
+        <script src="/js/admin-audit.js" defer></script>
+        <style>
+            .recovery-page {
+                padding: 2rem;
+            }
+            .recovery-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+                gap: 1rem;
+            }
+            .recovery-card {
+                min-width: 0;
+                padding: 1.2rem;
+                border: 1px solid #e2e8f0;
+                border-radius: 1rem;
+                background: #fff;
+            }
+            .recovery-card h2 {
+                margin-top: 0;
+                color: #172554;
+                font-size: 1.15rem;
+            }
+            .recovery-card p,
+            .recovery-note {
+                color: #475569;
+                line-height: 1.55;
+            }
+            .recovery-card textarea {
+                min-height: 5rem;
+            }
+            .recovery-result {
+                margin-top: 0.8rem;
+            }
+            .recovery-result ul {
+                padding-left: 1.3rem;
+            }
+            .recovery-file {
+                display: block;
+                margin: 0.8rem 0;
+            }
+            .recovery-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.6rem;
+                align-items: center;
+            }
+            .recovery-table {
+                width: 100%;
+                margin-top: 0.8rem;
+                border-collapse: collapse;
+            }
+            .recovery-table th,
+            .recovery-table td {
+                padding: 0.55rem;
+                text-align: left;
+                vertical-align: top;
+                border-bottom: 1px solid #e2e8f0;
+            }
+            @media (max-width: 700px) {
+                .recovery-page {
+                    padding: 1rem;
+                }
+            }
+        </style>
+        <link rel="stylesheet" href="/ui-modernization.css" />
+    </head>
+    <body
+        data-user-id="<%= user.id %>"
+        data-user-name="<%= user.username %>"
+        data-user-role="<%= user.role %>"
+        data-csrf-token="<%= csrfToken %>"
+        data-csv-max-bytes="<%= csvMaxBytes %>"
+    >
+        <div class="dashboard-container">
+            <%- include('../partials/sidebar', { activePage: 'recovery' }) %>
+            <main class="main-content">
+                <header class="navbar">
+                    <div class="page-title">
+                        <h3>Backup &amp; data recovery</h3>
+                    </div>
+                    <div class="user-controls">
+                        <span data-current-user
+                            ><%= user.username %>
+                            (Admin)</span
+                        >
+                    </div>
+                </header>
+                <section class="recovery-page">
+                    <p class="recovery-note">
+                        Server backups contain database records only. Pending changes that have not synced are stored
+                        separately on each device; use the local offline backup from the dashboard for those.
+                    </p>
+                    <div class="recovery-grid">
+                        <section class="recovery-card" aria-labelledby="csv-heading">
+                            <h2 id="csv-heading">Patient CSV import</h2>
+                            <p>
+                                Import creates new active patient records. It does not overwrite existing IDs or restore
+                                activity history. All rows must validate before any are committed.
+                            </p>
+                            <label for="csv-file">CSV file (maximum <%= csvMaxBytes.toLocaleString() %> bytes)</label>
+                            <input class="recovery-file" id="csv-file" type="file" accept=".csv,text/csv" />
+                            <p id="csv-file-info" class="recovery-note" aria-live="polite">No file selected.</p>
+                            <div class="recovery-actions">
+                                <a class="btn-action" href="/admin/recovery/csv/template.csv">Download CSV template</a>
+                                <button class="btn-action" id="csv-preview" type="button">Preview CSV</button>
+                                <button class="btn-primary" id="csv-import" type="button" disabled>
+                                    Import valid file
+                                </button>
+                                <button class="btn-action" id="csv-errors" type="button" hidden>Download error report</button>
+                            </div>
+                            <div id="csv-status" class="recovery-result" role="status" aria-live="polite"></div>
+                        </section>
+
+                        <section class="recovery-card" aria-labelledby="backup-heading">
+                            <h2 id="backup-heading">Create server backup</h2>
+                            <p>
+                                Downloads patients, visits, activity, staff metadata, security audit events, and sync
+                                idempotency records. Passwords and session credentials are excluded.
+                            </p>
+                            <form
+                                method="POST"
+                                action="/admin/recovery/backup"
+                                data-confirm="Create and download a sensitive server backup? Store it securely; it contains patient records."
+                                data-confirm-title="Create server backup"
+                            >
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                                <input type="hidden" name="confirm" value="yes" />
+                                <button class="btn-primary" type="submit">Create and download backup</button>
+                            </form>
+                            <div id="backup-status" class="recovery-result" role="status" aria-live="polite"></div>
+                        </section>
+
+                        <section class="recovery-card" aria-labelledby="restore-heading">
+                            <h2 id="restore-heading">Restore to a fresh database</h2>
+                            <p>
+                                Restore is permitted only on a database containing one temporary active Admin account
+                                and no patient, visit, activity, or synchronization-history records. Existing staff
+                                accounts must be removed through a separately prepared fresh environment.
+                            </p>
+                            <label for="backup-file">HealthSys server backup JSON (maximum 50 MB)</label>
+                            <input class="recovery-file" id="backup-file" type="file" accept=".json,application/json" />
+                            <div class="recovery-actions">
+                                <button class="btn-action" id="restore-preview" type="button">
+                                    Validate backup and target
+                                </button>
+                                <button class="btn-primary" id="restore-commit" type="button" disabled>
+                                    Restore to fresh database
+                                </button>
+                            </div>
+                            <div id="restore-status" class="recovery-result" role="status" aria-live="polite"></div>
+                        </section>
+                    </div>
+                    <section class="recovery-card" aria-labelledby="audit-heading" style="margin-top: 1rem;">
+                        <h2 id="audit-heading">Administrative audit history</h2>
+                        <p>Read-only, Admin-only history of patient lifecycle, CSV, and synchronization events. Clinical field values are not included in patient change summaries.</p>
+                        <form id="audit-filters" class="recovery-actions">
+                            <label>Action <input name="action" maxlength="80"></label>
+                            <label>Actor ID <input name="actor" inputmode="text"></label>
+                            <label>Entity ID <input name="entity" inputmode="text"></label>
+                            <label>Outcome
+                                <select name="outcome">
+                                    <option value="">Any outcome</option>
+                                    <option value="success">Success</option>
+                                    <option value="partial">Partial</option>
+                                    <option value="conflict">Conflict</option>
+                                    <option value="failure">Failure</option>
+                                    <option value="already_applied">Already applied</option>
+                                </select>
+                            </label>
+                            <label>From <input type="date" name="from"></label>
+                            <label>To <input type="date" name="to"></label>
+                            <button class="btn-action" type="submit">Filter audit history</button>
+                        </form>
+                        <p id="audit-status" role="status" aria-live="polite">Loading audit history…</p>
+                        <div style="overflow-x: auto;">
+                            <table class="recovery-table">
+                                <thead>
+                                    <tr><th>Date and time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Outcome</th><th>Details</th></tr>
+                                </thead>
+                                <tbody id="audit-events"></tbody>
+                            </table>
+                        </div>
+                        <div class="recovery-actions">
+                            <button class="btn-action" id="audit-previous" type="button" disabled>Previous</button>
+                            <span id="audit-page"></span>
+                            <button class="btn-action" id="audit-next" type="button" disabled>Next</button>
+                        </div>
+                    </section>
+                    <p class="recovery-note">
+                        A restore replaces the temporary bootstrap Admin account. Set
+                        <code>RESTORE_ADMIN_PASSWORD</code> on the server to a strong temporary password before
+                        restoring. All other restored staff accounts receive unusable random password hashes and must be
+                        reset individually by an Admin. Never use a production database to test a restore.
+                    </p>
+                </section>
+            </main>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#2563eb" />
+    <title>Connection unavailable | HealthSys</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/js/sw-register.js" defer></script>
+    <script src="/js/offline-status.js" defer></script>
+  </head>
+  <body>
+    <main class="auth-container">
+      <section class="auth-card" aria-labelledby="offlineHeading">
+        <h1 id="offlineHeading">HealthSys cannot reach the server</h1>
+        <p id="offlineStatus" class="notice notice-warn" role="status">
+          The requested page or server operation has not been completed.
+        </p>
+        <p>
+          Reconnect to access server pages and confirm saved changes. This
+          fallback does not contain the requested patient record or confirm that
+          a server operation succeeded.
+        </p>
+        <p>
+          <a class="btn-action" href="/patients"
+            >Open the offline patient workspace</a
+          >
+        </p>
+        <button id="retryConnection" class="btn-primary" type="button">
+          Retry connection
+        </button>
+        <p>
+          Sign-in and server-backed pages require a connection. Retry when
+          HealthSys is available.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

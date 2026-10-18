@@ -1,0 +1,48 @@
+{
+  "name": "project",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server/app.js",
+    "migrate:patients": "node server/migrate_patient_management.js",
+    "migrate:sync-idempotency": "node server/migrate_sync_idempotency.js",
+    "migrate:sync-logs": "node server/migrate_sync_logs.js",
+    "migrate:security-audit": "node server/migrate_security_audit.js",
+    "migrate:staff-security": "node server/migrate_staff_security.js",
+    "migrate:appointments": "node server/migrate_appointments.js",
+    "seed:demo": "node server/seed_demo.js",
+    "test": "npm run test:unit",
+    "test:unit": "node --test --test-concurrency=1 server/tests/dashboard-sync.test.js server/tests/appointment-validation.test.js server/tests/appointments-migration.test.js server/tests/patient-validation.test.js server/tests/patient-duplicates.test.js server/tests/security-controls.test.js server/tests/pwa-service-worker.test.js server/tests/pwa-install-prompt.test.js server/tests/offline-patient-form-ui.test.js server/tests/backup-recovery.test.js server/tests/patient-repository.test.js server/tests/migrations.test.js server/tests/config.test.js server/tests/error-handlers.test.js server/tests/logger.test.js server/tests/report-filters.test.js server/tests/integration-test-guard.test.js server/tests/login-flow.test.js server/tests/patients-client.test.js server/tests/navigation-sidebar.test.js server/tests/page-ui.test.js server/tests/demo-seed.test.js",
+    "test:release": "npm run test:unit && npm run test:integration",
+    "test:performance": "node --test --test-concurrency=1 server/tests/patient-performance.integration.test.js",
+    "test:recovery": "node --test server/tests/backup-recovery.test.js server/tests/dashboard-sync.test.js",
+    "test:integration": "node --test --test-concurrency=1 server/tests/appointment-management.integration.test.js server/tests/patient-management.integration.test.js server/tests/staff-security.integration.test.js",
+    "migrate": "node server/migrate.js",
+    "lint": "eslint server/app.js server/models/Patient.js server/routes/patients.js server/routes/appointments.js server/routes/sync.js server/routes/dashboard.js server/config.js server/patient_repository.js server/patient_validation.js server/appointment_validation.js server/sync_operation.js server/report_filters.js server/logger.js server/error_handlers.js server/migrate.js server/migrate_appointments.js server/demo_data.js server/seed_demo.js server/generate_dev_cert.js server/tests/appointment-validation.test.js server/tests/appointments-migration.test.js server/tests/appointment-management.integration.test.js server/tests/patient-repository.test.js server/tests/migrations.test.js server/tests/config.test.js server/tests/error-handlers.test.js server/tests/logger.test.js server/tests/integration-test-guard.test.js server/tests/login-flow.test.js server/tests/patients-client.test.js server/tests/navigation-sidebar.test.js server/tests/page-ui.test.js server/tests/pwa-install-prompt.test.js server/tests/offline-patient-form-ui.test.js server/tests/demo-seed.test.js",
+    "format": "prettier --write server/config.js server/patient_repository.js server/logger.js server/error_handlers.js server/migrate.js server/tests/patient-repository.test.js server/tests/migrations.test.js server/tests/config.test.js server/tests/error-handlers.test.js server/tests/logger.test.js server/tests/integration-test-guard.test.js",
+    "format:check": "prettier --check README.md package.json docs/offline-and-recovery.md docs/demo-recording-checklist.md server/demo_data.js server/seed_demo.js server/generate_dev_cert.js server/tests/demo-seed.test.js server/config.js server/patient_repository.js server/logger.js server/error_handlers.js server/migrate.js server/tests/patient-repository.test.js server/tests/migrations.test.js server/tests/config.test.js server/tests/error-handlers.test.js server/tests/logger.test.js server/tests/integration-test-guard.test.js server/tests/login-flow.test.js server/tests/patients-client.test.js server/tests/navigation-sidebar.test.js server/tests/page-ui.test.js server/tests/pwa-install-prompt.test.js server/tests/offline-patient-form-ui.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^18.0.7",
+    "ejs": "^4.0.1",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "mysql2": "^3.16.2",
+    "selfsigned": "^5.5.0",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "nodemon": "^3.1.11",
+    "prettier": "^3.9.9",
+    "prettier-plugin-ejs": "^1.0.3"
+  }
+}

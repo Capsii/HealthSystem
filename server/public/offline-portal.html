@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#2563eb" />
+    <title>HealthSys Offline</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/offline-workspace.css" />
+    <link rel="stylesheet" href="/offline-portal.css" />
+    <script src="/js/offline-access.js" defer></script>
+    <script src="/js/dexie.min.js" defer></script>
+    <script src="/js/db.js" defer></script>
+    <script src="/js/offline-portal.js" defer></script>
+    <script src="/js/sw-register.js" defer></script>
+  </head>
+  <body>
+    <div class="offline-workspace">
+      <aside class="offline-sidebar" aria-label="Offline navigation">
+        <strong class="offline-brand">HealthSys</strong>
+        <nav aria-label="Main navigation">
+          <a href="/dashboard" data-nav="dashboard">Dashboard</a>
+          <a href="/patients">Patients</a>
+          <a href="/admin/staff" data-admin-link hidden>Staff</a>
+          <a href="/admin/reports" data-admin-link hidden>Reports</a>
+          <a
+            href="/admin/recovery"
+            data-admin-link
+            data-nav="data recovery"
+            hidden
+            >Data recovery</a
+          >
+        </nav>
+      </aside>
+      <main class="offline-patient-main">
+        <header class="offline-patient-header">
+          <div>
+            <p class="offline-eyebrow">HealthSys offline view</p>
+            <h1 id="offlinePageTitle">Loading…</h1>
+            <p id="offlinePageAccount" class="offline-muted"></p>
+          </div>
+          <div class="offline-header-actions">
+            <span
+              id="offlinePageConnection"
+              class="offline-state"
+              role="status"
+            >
+              Checking local access…
+            </span>
+            <button id="offlinePageRetry" class="btn-action" type="button">
+              Check connection
+            </button>
+            <button
+              id="offlinePageOpenOnline"
+              class="btn-primary"
+              type="button"
+              hidden
+            >
+              Open online page
+            </button>
+          </div>
+        </header>
+        <p class="offline-notice">
+          This is a local view, not a live server page. Temporary network
+          failures do not sign you out; a server-confirmed expired session
+          closes local access.
+        </p>
+        <section id="offlinePageLocked" class="offline-panel" hidden>
+          <h2 id="offlinePageLockedTitle">Offline access is unavailable</h2>
+          <p id="offlinePageLockedMessage">
+            Sign in while connected to establish offline access for this
+            account.
+          </p>
+          <a class="btn-primary offline-link-button" href="/login">
+            Sign in to HealthSys
+          </a>
+        </section>
+        <section id="offlinePageContent" hidden aria-live="polite"></section>
+        <p
+          id="offlinePageStatus"
+          class="offline-muted"
+          role="status"
+          aria-live="polite"
+        ></p>
+      </main>
+    </div>
+  </body>
+</html>

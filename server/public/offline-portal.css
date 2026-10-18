@@ -1,0 +1,147 @@
+.offline-portal-status {
+  margin: 0 0 0.75rem;
+  color: #475569;
+  font-size: 0.88rem;
+}
+
+.offline-portal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 1rem;
+}
+
+.offline-portal-card {
+  min-width: 0;
+  padding: 1.1rem;
+  border: 1px solid #dbe3ec;
+  border-radius: 0.8rem;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.05);
+}
+
+.offline-portal-card h2,
+.offline-portal-card h3 {
+  margin: 0 0 0.8rem;
+  color: #172554;
+  font-size: 1.05rem;
+}
+
+.offline-portal-card p {
+  color: #475569;
+  line-height: 1.5;
+}
+
+.offline-portal-value {
+  display: block;
+  color: #172554;
+  font-size: 1.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.offline-portal-list {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0;
+  list-style: none;
+}
+
+.offline-portal-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+.offline-portal-list strong {
+  color: #172554;
+  font-variant-numeric: tabular-nums;
+}
+
+.offline-portal-chart {
+  display: flex;
+  min-height: 190px;
+  align-items: end;
+  gap: 0.45rem;
+  overflow-x: auto;
+  padding: 0.75rem 0.25rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.offline-portal-month {
+  display: grid;
+  flex: 1 0 42px;
+  align-content: end;
+  justify-items: center;
+  gap: 0.3rem;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.offline-portal-bar-track {
+  display: flex;
+  height: 130px;
+  align-items: end;
+}
+
+.offline-portal-bar {
+  width: 26px;
+  min-height: 3px;
+  border-radius: 0.35rem 0.35rem 0 0;
+  background: #2563eb;
+}
+
+.offline-portal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.offline-portal-actions .btn-primary,
+.offline-portal-actions .btn-action {
+  width: auto;
+}
+
+.offline-portal-error {
+  border-left: 3px solid #b91c1c;
+  background: #fef2f2;
+  padding: 0.8rem 1rem;
+  color: #7f1d1d;
+}
+
+@media (max-width: 700px) {
+  .offline-workspace {
+    display: block;
+  }
+
+  .offline-sidebar {
+    padding: 0.7rem;
+  }
+
+  .offline-brand {
+    padding: 0.25rem 0.5rem 0.6rem;
+  }
+
+  .offline-sidebar nav {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+  }
+
+  .offline-sidebar a {
+    flex: 0 0 auto;
+    padding: 0.6rem;
+    white-space: nowrap;
+  }
+
+  .offline-patient-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .offline-header-actions {
+    flex-wrap: wrap;
+  }
+}

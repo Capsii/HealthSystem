@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Reports | HealthSys</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="/js/dexie.min.js"></script>
+    <script src="/js/db.js"></script>
+    <script src="/js/offline-access.js"></script>
+    <script src="/js/status.js"></script>
+    <script src="/js/sw-register.js"></script>
+    <script src="/js/ui.js" defer></script>
+    <style>
+        .reports-page { padding: 2rem; }
+        .report-heading { display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:1.25rem; }
+        .report-heading h1 { margin:0;color:#172554;font-size:clamp(1.5rem,3vw,2rem); }
+        .report-heading p,.report-note { color:#64748b;line-height:1.5; }
+        .report-range { padding:.55rem .8rem;border:1px solid #e2e8f0;border-radius:999px;background:#fff;color:#475569;font-weight:600; }
+        .report-filter { display:flex;flex-wrap:wrap;align-items:end;gap:.8rem;padding:1rem;margin-bottom:1rem;border:1px solid #e2e8f0;border-radius:1rem;background:#fff; }
+        .report-filter .form-group { margin:0; }
+        .report-filter[aria-busy="true"] button { opacity:.7;cursor:wait; }
+        .report-kpis { display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:1rem;margin:1rem 0; }
+        .report-kpi,.report-panel { min-width:0;padding:1.1rem;border:1px solid #e2e8f0;border-radius:1rem;background:#fff;box-shadow:var(--shadow-sm); }
+        .report-kpi-label { color:#64748b;font-size:.85rem;font-weight:600; }
+        .report-kpi-value { margin-top:.6rem;color:#172554;font-size:1.8rem;font-weight:700;font-variant-numeric:tabular-nums; }
+        .report-kpi-note { margin-top:.4rem;color:#64748b;font-size:.78rem;line-height:1.45; }
+        .report-layout { display:grid;grid-template-columns:minmax(0,1.4fr) minmax(270px,1fr);gap:1rem; }
+        .report-panel h2 { margin:0;color:#172554;font-size:1.05rem; }
+        .report-panel > p { color:#64748b;font-size:.82rem;line-height:1.5; }
+        .report-chart { display:flex;align-items:stretch;gap:.55rem;min-height:190px;padding:.75rem .25rem 0;overflow-x:auto;border-bottom:1px solid #e2e8f0; }
+        .report-month { display:flex;flex:1 0 38px;flex-direction:column;align-items:center;justify-content:flex-end;gap:.4rem; }
+        .report-month-count,.report-month-label { color:#64748b;font-size:.72rem; }
+        .report-bar-track { display:flex;align-items:flex-end;justify-content:center;width:min(100%,34px);height:130px; }
+        .report-bar { width:100%;min-height:4px;border-radius:.4rem .4rem 0 0;background:linear-gradient(180deg,#60a5fa,#2563eb); }
+        .report-list { display:grid;gap:.85rem;margin-top:1rem; }
+        .report-list-row,.report-sync-row { display:flex;justify-content:space-between;gap:.75rem;color:#475569;font-size:.85rem; }
+        .report-list-row strong,.report-sync-row strong { color:#172554;font-variant-numeric:tabular-nums; }
+        .report-empty { padding:.8rem;border-radius:.65rem;background:#f8fafc;color:#64748b;font-size:.85rem;line-height:1.5; }
+        .report-sync-state { display:grid;gap:.55rem;margin-top:1rem; }
+        .report-note { margin:.8rem 0 0;font-size:.76rem; }
+        @media(max-width:700px) {
+            .reports-page { padding:1rem; }
+            .report-heading { flex-direction:column; }
+            .report-layout { grid-template-columns:1fr; }
+            .report-filter { align-items:stretch; }
+        }
+    </style>
+    <link rel="stylesheet" href="/ui-modernization.css">
+</head>
+<body data-user-id="<%= user.id %>" data-user-name="<%= user.username %>" data-user-role="<%= user.role %>" data-csrf-token="<%= csrfToken %>">
+    <div class="dashboard-container">
+        <%- include('../partials/sidebar', { activePage: 'reports' }) %>
+        <main class="main-content">
+            <header class="navbar">
+                <div class="page-title"><h3>Reports &amp; insights</h3></div>
+                <div class="user-controls">
+                    <span data-current-user><i class="fas fa-user-circle"></i> <%= user.username %> (<%= user.role %>)</span>
+                    <div id="connectionStatus" class="status-indicator"><div class="status-dot"></div><span id="statusText">Offline</span></div>
+                    <form method="POST" action="/logout" data-logout>
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" class="btn-primary" style="width:auto;padding:.5rem 1rem;font-size:.9rem;">Logout</button>
+                    </form>
+                </div>
+            </header>
+
+            <section class="reports-page">
+                <div class="report-heading">
+                    <div>
+                        <h1>Reports</h1>
+                        <p>Database-backed counts and registration/sync activity. Server report data is unavailable offline.</p>
+                    </div>
+                    <% if (dateRangeLabel) { %><span class="report-range">Range: <%= dateRangeLabel %></span><% } %>
+                </div>
+
+                <form id="reportFilter" class="report-filter" method="GET" action="/admin/reports" aria-busy="false">
+                    <div class="form-group">
+                        <label for="range">Registration and sync range</label>
+                        <select class="form-control" id="range" name="range">
+                            <option value="today" <%= dateRange.range === 'today' ? 'selected' : '' %>>Today (UTC)</option>
+                            <option value="7d" <%= dateRange.range === '7d' ? 'selected' : '' %>>Last 7 days</option>
+                            <option value="30d" <%= dateRange.range === '30d' ? 'selected' : '' %>>Last 30 days</option>
+                            <option value="custom" <%= dateRange.range === 'custom' ? 'selected' : '' %>>Custom dates</option>
+                            <option value="all" <%= dateRange.range === 'all' ? 'selected' : '' %>>All time</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="customDates">
+                        <label for="fromDate">Start date (UTC)</label>
+                        <input class="form-control" type="date" id="fromDate" name="fromDate" value="<%= dateRange.fromDate || '' %>">
+                    </div>
+                    <div class="form-group" id="customDatesTo">
+                        <label for="toDate">End date (UTC, inclusive)</label>
+                        <input class="form-control" type="date" id="toDate" name="toDate" value="<%= dateRange.toDate || '' %>">
+                    </div>
+                    <button type="submit" class="btn-primary" id="generateReport">Apply filters</button>
+                    <a class="btn-action" href="/admin/reports?range=30d">Reset</a>
+                    <span id="reportLoading" role="status" hidden>Generating report...</span>
+                </form>
+
+                <% if (reportError) { %>
+                    <div class="notice notice-error" role="alert"><%= reportError %></div>
+                <% } else { %>
+                    <%
+                        const reportExportParams = new URLSearchParams({ range: dateRange.range });
+                        if (dateRange.range === 'custom') {
+                            reportExportParams.set('fromDate', dateRange.fromDate);
+                            reportExportParams.set('toDate', dateRange.toDate);
+                        }
+                    %>
+                    <p><a class="btn-action" href="/admin/reports/registrations.csv?<%= reportExportParams.toString() %>">Export registrations for this period (CSV)</a></p>
+                    <p class="report-note">
+                        Generated <time datetime="<%= reportGeneratedAt %>"><%= new Date(reportGeneratedAt).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' }) %> UTC</time>.
+                        Registration trend, new registrations, gender breakdown, and sync logs use the selected UTC range.
+                        Current patient/staff status totals are all-time snapshots.
+                    </p>
+                    <div class="report-kpis" aria-label="Current account and patient totals">
+                        <article class="report-kpi">
+                            <div class="report-kpi-label">Active patients (all time)</div>
+                            <div class="report-kpi-value" id="reportActivePatients"><%= totalPatients.toLocaleString() %></div>
+                            <div class="report-kpi-note">Matches Patient Management's active status: is_deleted = false.</div>
+                        </article>
+                        <article class="report-kpi">
+                            <div class="report-kpi-label">Soft-deleted patients</div>
+                            <div class="report-kpi-value" id="reportDeletedPatients"><%= deletedPatients.toLocaleString() %></div>
+                            <div class="report-kpi-note">Deleted records are excluded from registration cohorts.</div>
+                        </article>
+                        <article class="report-kpi">
+                            <div class="report-kpi-label">Unknown patient status</div>
+                            <div class="report-kpi-value" id="reportUnknownPatients"><%= unknownPatientStatus.toLocaleString() %></div>
+                            <div class="report-kpi-note">NULL deletion status; excluded from active and deleted counts.</div>
+                        </article>
+                        <article class="report-kpi">
+                            <div class="report-kpi-label">Active registrations (<%= dateRangeLabel %>)</div>
+                            <div class="report-kpi-value" id="reportNewPatients"><%= newPatientsInRange.toLocaleString() %></div>
+                            <div class="report-kpi-note">Active patient records created within the selected range (UTC).</div>
+                        </article>
+                        <article class="report-kpi">
+                            <div class="report-kpi-label">Active staff</div>
+                            <div class="report-kpi-value" id="reportActiveStaff"><%= activeStaff.toLocaleString() %></div>
+                            <div class="report-kpi-note">is_active = true and is_deleted = false; current snapshot.</div>
+                        </article>
+                        <article class="report-kpi">
+                            <div class="report-kpi-label">Disabled staff</div>
+                            <div class="report-kpi-value" id="reportDisabledStaff"><%= disabledStaff.toLocaleString() %></div>
+                            <div class="report-kpi-note">Non-deleted accounts not marked active, including NULL status.</div>
+                        </article>
+                        <article class="report-kpi">
+                            <div class="report-kpi-label">Soft-deleted staff</div>
+                            <div class="report-kpi-value" id="reportDeletedStaff"><%= deletedStaff.toLocaleString() %></div>
+                            <div class="report-kpi-note">Excluded from staff management totals.</div>
+                        </article>
+                    </div>
+
+                    <div class="report-layout">
+                        <section class="report-panel">
+                            <h2>Active patient registrations</h2>
+                            <p>Grouped by <%= dateRange.dayCount !== null && dateRange.dayCount <= 62 ? 'UTC day' : 'UTC month' %> of created_at. Deleted records are excluded.</p>
+                            <% if (patientsByMonth.length) { %>
+                                <div class="report-chart" role="img" aria-label="Active patient registration count by date bucket">
+                                    <% patientsByMonth.forEach((item) => { %>
+                                        <div class="report-month" title="<%= item.bucket %>: <%= item.count %> active registrations">
+                                            <span class="report-month-count"><%= item.count %></span>
+                                            <div class="report-bar-track"><div class="report-bar" style="height:<%= Math.max(4, item.height) %>%"></div></div>
+                                            <span class="report-month-label"><%= item.label %></span>
+                                        </div>
+                                    <% }) %>
+                                </div>
+                            <% } else { %>
+                                <div class="report-empty">No active patient registrations matched this date range.</div>
+                            <% } %>
+
+                            <h2 style="margin-top:1.5rem;">Patient records by gender</h2>
+                            <p>Same active, non-deleted creation-date cohort as the registration total above.</p>
+                            <% if (genderBreakdown.length) { %>
+                                <div class="report-list">
+                                    <% genderBreakdown.forEach((item) => { %>
+                                        <div class="report-list-row">
+                                            <span><%= item.label %></span>
+                                            <strong><%= item.count.toLocaleString() %> (<%= item.percentage %>%)</strong>
+                                        </div>
+                                    <% }) %>
+                                </div>
+                                <p class="report-note">Gender groups sum to <%= newPatientsInRange.toLocaleString() %> active registrations in the selected range.</p>
+                            <% } else { %>
+                                <div class="report-empty">No matching patient records were found for this range.</div>
+                            <% } %>
+                        </section>
+
+                        <div>
+                            <section class="report-panel">
+                                <h2>Active staff by role</h2>
+                                <p>Current enabled accounts; excludes soft-deleted and disabled accounts. Not date-filtered.</p>
+                                <% if (staffBreakdown.length) { %>
+                                    <div class="report-list">
+                                        <% staffBreakdown.forEach((item) => { %>
+                                            <div class="report-list-row">
+                                                <span><%= item.role ? item.role.charAt(0).toUpperCase() + item.role.slice(1) : 'Unassigned' %></span>
+                                                <strong><%= item.count.toLocaleString() %></strong>
+                                            </div>
+                                        <% }) %>
+                                    </div>
+                                <% } else { %>
+                                    <div class="report-empty">No active staff accounts were found.</div>
+                                <% } %>
+                                <p class="report-note">Role totals sum to <%= activeStaff.toLocaleString() %>, matching the current active staff total.</p>
+                            </section>
+
+                            <section class="report-panel" style="margin-top:1rem;">
+                                <h2>Server-recorded synchronization</h2>
+                                <p>Completion-time range: <%= dateRangeLabel %>. These counts are historical server logs, not the browser queue.</p>
+                                <% if (syncStatsAvailable) { %>
+                                    <div class="report-sync-state">
+                                        <div class="report-sync-row"><span>Recorded attempts</span><strong id="reportSyncEvents"><%= syncEvents.toLocaleString() %></strong></div>
+                                        <div class="report-sync-row"><span>Successful</span><strong id="reportSyncSuccess"><%= successfulSyncEvents.toLocaleString() %></strong></div>
+                                        <div class="report-sync-row"><span>Failed</span><strong id="reportSyncFailed"><%= failedSyncEvents.toLocaleString() %></strong></div>
+                                        <div class="report-sync-row"><span>Partial failures</span><strong id="reportSyncPartial"><%= partialSyncEvents.toLocaleString() %></strong></div>
+                                        <div class="report-sync-row"><span>Legacy outcome unknown</span><strong><%= unknownSyncEvents.toLocaleString() %></strong></div>
+                                        <div class="report-sync-row"><span>Operations in logged attempts</span><strong><%= totalSyncOps.toLocaleString() %></strong></div>
+                                        <div class="report-sync-row"><span>Last successful completion</span><strong><%= lastSuccessfulSyncAt ? `${new Date(`${String(lastSuccessfulSyncAt).replace(' ', 'T')}Z`).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC` : 'None in range' %></strong></div>
+                                        <div class="report-sync-row"><span>Last recorded attempt</span><strong><%= lastSyncAttemptAt ? `${new Date(`${String(lastSyncAttemptAt).replace(' ', 'T')}Z`).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC` : 'None in range' %></strong></div>
+                                    </div>
+                                <% } else { %>
+                                    <div class="report-empty">Unable to load synchronization history.</div>
+                                <% } %>
+                                <p class="report-note">The current sync endpoint logs completed attempts only; it does not persist an in-progress state. Older rows without an outcome remain “unknown.”</p>
+                                <hr>
+                                <h3>Local queue on this browser</h3>
+                                <div id="localQueueStatus" class="report-empty" role="status">Checking the local synchronization queue...</div>
+                                <p class="report-note">Local queue status is device-specific and may include changes from other signed-in sessions on this browser. It is not part of server history.</p>
+                            </section>
+                        </div>
+                    </div>
+                <% } %>
+            </section>
+        </main>
+    </div>
+    <script>
+        const reportForm = document.getElementById('reportFilter');
+        const rangeSelect = document.getElementById('range');
+        const fromInput = document.getElementById('fromDate');
+        const toInput = document.getElementById('toDate');
+        const customFrom = document.getElementById('customDates');
+        const customTo = document.getElementById('customDatesTo');
+        function updateCustomRange() {
+            const custom = rangeSelect.value === 'custom';
+            customFrom.hidden = !custom;
+            customTo.hidden = !custom;
+            fromInput.required = custom;
+            toInput.required = custom;
+        }
+        updateCustomRange();
+        rangeSelect.addEventListener('change', updateCustomRange);
+        reportForm.addEventListener('submit', (event) => {
+            if (rangeSelect.value === 'custom' && fromInput.value > toInput.value) {
+                event.preventDefault();
+                toInput.setCustomValidity('End date must be on or after start date.');
+                toInput.reportValidity();
+                return;
+            }
+            toInput.setCustomValidity('');
+            reportForm.setAttribute('aria-busy', 'true');
+            document.getElementById('reportLoading').hidden = false;
+            const button = document.getElementById('generateReport');
+            button.disabled = true;
+            button.textContent = 'Generating...';
+        });
+
+        const queueStatus = document.getElementById('localQueueStatus');
+        if (queueStatus && window.db && typeof window.db.getQueueStatus === 'function') {
+            (async () => {
+                try {
+                    if (!(await window.db.databaseReady())) {
+                        throw new Error('Local database is unavailable.');
+                    }
+                    await window.db.setCurrentUser(document.body.dataset.userId || '');
+                    const status = await window.db.getQueueStatus();
+                    queueStatus.textContent = `${status.pending} pending, ${status.processing} processing, ${status.failed} failed, ${status.conflicts} conflicts. These are local device operations and are not server history.`;
+                } catch (error) {
+                    console.error('Could not read local sync queue for reports:', error?.name || 'DATABASE_ERROR');
+                    queueStatus.textContent = 'Local queue status is unavailable on this device.';
+                }
+            })();
+        } else if (queueStatus) {
+            queueStatus.textContent = 'Local queue storage is unavailable on this device.';
+        }
+    </script>
+</body>
+</html>

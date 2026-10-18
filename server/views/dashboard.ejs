@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<%
+  function formatDashboardTimestamp(value) {
+    if (!value) return 'Not available';
+    const text = value instanceof Date ? value.toISOString() : String(value);
+    const date = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(text)
+      ? `${text.replace(' ', 'T')}Z`
+      : text);
+    return Number.isNaN(date.getTime())
+      ? 'Not available'
+      : `${date.toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC`;
+  }
+  function dashboardActivityTitle(action) {
+    return ({
+      'patient.create': 'Patient record created',
+      'patient.update': 'Patient record updated',
+      'patient.delete': 'Patient record archived',
+      'patient.restore': 'Patient record restored',
+      'patient.visit.create': 'Patient visit recorded',
+      'patient.import.csv': 'Patient CSV import',
+      'patient.export.csv': 'Patient CSV export',
+      'patient.sync': 'Patient synchronization',
+      'patient.sync.conflict': 'Synchronization conflict',
+      'staff.create': 'Staff account created',
+      'staff.enable': 'Staff account enabled',
+      'staff.disable': 'Staff account disabled',
+      'staff.role_change': 'Staff role changed',
+      'staff.password_reset': 'Staff password reset',
+      'backup.server.create': 'Server backup created',
+      'backup.server.restore': 'Server backup restored',
+    })[action] || 'Administrative activity';
+  }
+%>
+<html>
+  <head>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#2563eb" />
+    <title>Dashboard | HealthSys</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/patient-dashboard-refresh.css" />
+    <link rel="stylesheet" href="/ui-modernization.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <script src="/js/dexie.min.js"></script>
+    <script src="/js/db.js"></script>
+    <script src="/js/offline-access.js"></script>
+    <script src="/js/dashboard.js" defer></script>
+    <script src="/js/offline-recovery.js" defer></script>
+    <script src="/js/ui.js" defer></script>
+    <script src="/js/status.js"></script>
+    <script src="/js/sw-register.js"></script>
+  </head>
+  <body class="dashboard-page" data-user-id="<%= user.id %>" data-user-name="<%= user.username %>" data-user-role="<%= user.role %>" data-csrf-token="<%= csrfToken %>" data-metrics-ready="<%= metrics ? 'true' : 'false' %>" data-server-snapshot-at="<%= metrics && metrics.serverSnapshotAt ? metrics.serverSnapshotAt : '' %>">
+    <div id="offlineBanner" class="dashboard-offline-banner" style="display:none" role="status">
+      You are offline. Counts use local records where available and may differ from the server.
+    </div>
+    <div class="dashboard-container">
+      <%- include('partials/sidebar', { activePage: 'dashboard' }) %>
+      <main class="main-content">
+        <header class="navbar">
+          <div class="page-title"><h3>Dashboard</h3></div>
+          <div class="user-controls">
+            <div class="user-info">
+              <span data-current-user><i class="fas fa-user-circle"></i> <%= user.username %> (<%= user.role %>)</span>
+              <div id="connectionStatus" class="status-indicator">
+                <div class="status-dot"></div><span id="statusText">Offline</span>
+              </div>
+            </div>
+            <form method="POST" action="/logout" data-logout>
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button type="submit" class="btn-primary dashboard-logout">Logout</button>
+            </form>
+          </div>
+        </header>
+
+        <div class="content-wrapper fade-in">
+          <div id="metricsError" class="notice notice-error" role="alert" <%= metricsError ? '' : 'hidden' %>><%= metricsError || '' %></div>
+          <p id="metricsSource" class="metrics-source" aria-live="polite"><%= metrics ? 'Counts from the server database.' : metricsError ? 'Dashboard metrics unavailable.' : 'Loading dashboard metrics...' %></p>
+          <section class="dashboard-overview" aria-label="HealthSys overview">
+            <section class="overview-group" aria-labelledby="patientOverviewHeading">
+              <div class="overview-group-heading">
+                <h2 id="patientOverviewHeading">Patients</h2>
+                <a href="<%= user.role === 'admin' ? '/patients?status=all' : '/patients?status=active' %>">View records</a>
+              </div>
+              <a class="overview-primary-metric" href="<%= user.role === 'admin' ? '/patients?status=all' : '/patients?status=active' %>" aria-label="View total patient records">
+                <span>Total patients</span>
+                <strong id="patientTotal"><%= metrics ? metrics.patients.total : 'Unavailable' %></strong>
+              </a>
+              <div class="overview-secondary-metrics">
+                <a href="/patients?status=active">
+                  <span>Active</span>
+                  <strong id="patientActive"><%= metrics ? metrics.patients.active : 'Unavailable' %></strong>
+                  <small id="patientActiveDetail">Not soft-deleted</small>
+                </a>
+                <% if (user.role === 'admin') { %>
+                  <a href="/patients?status=deleted">
+                    <span>Deleted</span>
+                    <strong id="patientDeleted"><%= metrics ? metrics.patients.deleted : 'Unavailable' %></strong>
+                    <small id="patientDeletedDetail">Soft-deleted records</small>
+                  </a>
+                <% } %>
+              </div>
+            </section>
+            <% if (user.role === 'admin') { %>
+              <section class="overview-group" aria-labelledby="staffOverviewHeading">
+                <div class="overview-group-heading">
+                  <h2 id="staffOverviewHeading">Staff accounts</h2>
+                  <a href="/admin/staff">Manage staff</a>
+                </div>
+                <a class="overview-primary-metric" data-staff-metric href="/admin/staff" aria-label="View total staff accounts">
+                  <span>Total accounts</span>
+                  <strong id="staffTotal"><%= metrics && metrics.staff ? metrics.staff.total : 'Unavailable' %></strong>
+                </a>
+                <div class="overview-secondary-metrics">
+                  <a data-staff-metric href="/admin/staff">
+                    <span>Active</span>
+                    <strong id="staffActive"><%= metrics && metrics.staff ? metrics.staff.active : 'Unavailable' %></strong>
+                    <small>Enabled accounts</small>
+                  </a>
+                  <a data-staff-metric href="/admin/staff">
+                    <span>Inactive</span>
+                    <strong id="staffInactive"><%= metrics && metrics.staff ? metrics.staff.inactive : 'Unavailable' %></strong>
+                    <small>Disabled accounts</small>
+                  </a>
+                </div>
+              </section>
+            <% } %>
+            <section class="overview-group overview-sync-group" aria-labelledby="syncOverviewHeading">
+              <div class="overview-group-heading">
+                <h2 id="syncOverviewHeading">Synchronization</h2>
+                <a href="#syncPanel">View status</a>
+              </div>
+              <a class="overview-primary-metric" href="#syncPanel" aria-label="View queued synchronization operations">
+                <span>Queued operations</span>
+                <strong id="queueCount" data-available="false">Loading</strong>
+              </a>
+              <p id="queueDetails" class="queue-details">Pending changes are stored locally and have not yet been confirmed by the server.</p>
+            </section>
+          </section>
+
+          <section class="dashboard-recent-activity" aria-label="Recent activity">
+            <article class="dashboard-recent-panel" aria-labelledby="recentPatientsHeading">
+              <div class="overview-group-heading">
+                <h2 id="recentPatientsHeading">Recently registered patients</h2>
+                <a href="/patients?status=active">View patient list</a>
+              </div>
+              <% if (metrics && Array.isArray(metrics.recentPatients)) { %>
+                <% if (metrics.recentPatients.length) { %>
+                  <ul id="recentPatientsList" class="dashboard-recent-list">
+                    <% metrics.recentPatients.forEach((patient) => { %>
+                      <li>
+                        <a href="/patients/<%= encodeURIComponent(patient.id) %>"><span><%= patient.full_name %></span><small><%= patient.id %></small></a>
+                        <time datetime="<%= patient.created_at instanceof Date ? patient.created_at.toISOString() : patient.created_at %>"><%= formatDashboardTimestamp(patient.created_at) %></time>
+                      </li>
+                    <% }); %>
+                  </ul>
+                <% } else { %>
+                  <p id="recentPatientsEmpty" class="dashboard-recent-empty">No active patient records are available.</p>
+                  <ul id="recentPatientsList" class="dashboard-recent-list" hidden></ul>
+                <% } %>
+              <% } else { %>
+                <p id="recentPatientsEmpty" class="dashboard-recent-empty">Recent patient registrations are unavailable.</p>
+                <ul id="recentPatientsList" class="dashboard-recent-list" hidden></ul>
+              <% } %>
+              <p id="recentPatientsSource" class="dashboard-recent-source">Active records, ordered by original creation time.</p>
+            </article>
+            <article class="dashboard-recent-panel" aria-labelledby="recentActivityHeading">
+              <div class="overview-group-heading">
+                <h2 id="recentActivityHeading">Recent staff activity</h2>
+                <% if (user.role === 'admin') { %>
+                  <a href="/admin/recovery#audit-heading">View audit history</a>
+                <% } else { %>
+                  <a href="/patients">View patient records</a>
+                <% } %>
+              </div>
+              <% if (metrics && Array.isArray(metrics.recentActivity)) { %>
+                <% if (metrics.recentActivity.length) { %>
+                  <ul id="recentActivityList" class="dashboard-recent-list dashboard-activity-list">
+                    <% metrics.recentActivity.forEach((event) => { %>
+                      <li>
+                        <span><strong><%= dashboardActivityTitle(event.action) %></strong><small><%= event.actor_name || 'System' %><%= event.actor_role ? ` (${event.actor_role})` : '' %> · <%= event.outcome %></small></span>
+                        <time datetime="<%= event.created_at instanceof Date ? event.created_at.toISOString() : event.created_at %>"><%= formatDashboardTimestamp(event.created_at) %></time>
+                      </li>
+                    <% }); %>
+                  </ul>
+                <% } else { %>
+                  <p id="recentActivityEmpty" class="dashboard-recent-empty">No recent activity is available.</p>
+                  <ul id="recentActivityList" class="dashboard-recent-list dashboard-activity-list" hidden></ul>
+                <% } %>
+              <% } else { %>
+                <p id="recentActivityEmpty" class="dashboard-recent-empty">Recent activity is unavailable.</p>
+                <ul id="recentActivityList" class="dashboard-recent-list dashboard-activity-list" hidden></ul>
+              <% } %>
+              <p id="recentActivitySource" class="dashboard-recent-source">Server audit events; sensitive event details are not shown.</p>
+            </article>
+          </section>
+
+          <section id="syncPanel" class="sync-panel" aria-labelledby="syncHeading">
+            <div class="sync-panel-heading">
+              <div>
+                <h2 id="syncHeading">Synchronization</h2>
+                <p>Pending changes are stored locally and have not yet been confirmed by the server.</p>
+              </div>
+              <button id="syncButton" class="btn-primary sync-button" type="button" onclick="manualSync()">
+                <i class="fas fa-sync"></i> Sync Now
+              </button>
+            </div>
+            <div class="sync-status-grid">
+              <p><strong>Last Successful Sync</strong><span id="lastSuccessfulSync"><%= metrics && metrics.lastSuccessfulSyncAt ? `${new Date(`${String(metrics.lastSuccessfulSyncAt).replace(' ', 'T')}Z`).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC` : 'Never' %></span></p>
+              <p><strong>Last Sync Attempt</strong><span id="lastSyncAttempt"><%= metrics && metrics.lastSyncAttemptAt ? `${new Date(`${String(metrics.lastSyncAttemptAt).replace(' ', 'T')}Z`).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC` : 'Never' %></span></p>
+              <p><strong>Latest Attempt</strong><span id="syncOutcome">Idle</span></p>
+            </div>
+            <p id="syncProgress" class="sync-progress" role="status"></p>
+            <p id="syncMessage" class="sync-message" aria-live="polite"></p>
+            <div id="serverSyncTimes"
+                 data-successful="<%= metrics && metrics.lastSuccessfulSyncAt ? new Date(metrics.lastSuccessfulSyncAt).toISOString() : '' %>"
+                 data-attempt="<%= metrics && metrics.lastSyncAttemptAt ? new Date(metrics.lastSyncAttemptAt).toISOString() : '' %>"
+                 data-outcome="<%= metrics && metrics.lastAttemptOutcome ? metrics.lastAttemptOutcome : '' %>"></div>
+          </section>
+          <section id="conflictReview" class="sync-panel" aria-labelledby="conflictHeading" hidden>
+            <div class="sync-panel-heading">
+              <div>
+                <h2 id="conflictHeading">Changes needing review</h2>
+                <p>Both versions are preserved. Review each changed field, apply safe non-conflicting edits, or choose an entire record version.</p>
+              </div>
+            </div>
+            <div id="conflictList" aria-live="polite"></div>
+            <p id="conflictResolutionStatus" role="status" aria-live="polite"></p>
+          </section>
+          <section id="failedReview" class="sync-panel" aria-labelledby="failedHeading" hidden>
+            <div class="sync-panel-heading">
+              <div>
+                <h2 id="failedHeading">Changes needing attention</h2>
+                <p>These operations remain stored on this device and were not confirmed by the server.</p>
+              </div>
+              <button id="retryFailedChanges" class="btn-action" type="button">Retry eligible changes</button>
+            </div>
+            <ul id="failedList" aria-live="polite"></ul>
+            <p id="failedOperationStatus" role="status" aria-live="polite"></p>
+          </section>
+          <section class="sync-panel" aria-labelledby="offlineRecoveryHeading">
+            <div class="sync-panel-heading">
+              <div>
+                <h2 id="offlineRecoveryHeading">Local offline recovery</h2>
+                <p>This device-only backup includes your patient snapshots and queued changes, including failed operations. It is not a server backup and is not encrypted.</p>
+              </div>
+            </div>
+            <div class="offline-recovery-grid">
+              <div class="offline-recovery-action">
+                <h3>Download a backup</h3>
+                <p>Save this device's patient snapshots and queued changes to a JSON file.</p>
+                <button id="exportOfflineBackup" class="btn-action" type="button">Download local offline backup</button>
+                <p id="localBackupStatus" class="dashboard-backup-status" role="status" aria-live="polite">Local backup history is not available.</p>
+                <small>Device-only backup. HealthSys cannot verify whether a previously downloaded file still exists.</small>
+              </div>
+              <div class="offline-recovery-action">
+                <h3>Restore a backup</h3>
+                <label for="importOfflineBackup">Choose a local backup file for this account</label>
+                <input id="importOfflineBackup" type="file" accept=".json,application/json">
+                <button id="restoreOfflineBackup" class="btn-action" type="button">Import local backup</button>
+              </div>
+            </div>
+            <p id="offlineRecoveryStatus" role="status" aria-live="polite"></p>
+          </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

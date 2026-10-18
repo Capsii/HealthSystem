@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#2563eb" />
+    <title>Offline Patients | HealthSys</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/offline-workspace.css" />
+    <script src="/js/offline-access.js" defer></script>
+    <script src="/js/dexie.min.js" defer></script>
+    <script src="/js/db.js" defer></script>
+    <script src="/js/offline-workspace.js" defer></script>
+    <script src="/js/sw-register.js" defer></script>
+  </head>
+  <body>
+    <div id="offlineWorkspace" class="offline-workspace" hidden>
+      <aside class="offline-sidebar" aria-label="Offline navigation">
+        <strong class="offline-brand">HealthSys</strong>
+        <nav aria-label="Main navigation">
+          <a href="/dashboard">Dashboard</a>
+          <a href="/patients" aria-current="page">Patients</a>
+          <a href="/admin/staff" data-admin-link hidden>Staff</a>
+          <a href="/admin/reports" data-admin-link hidden>Reports</a>
+          <a href="/admin/recovery" data-admin-link hidden>Data recovery</a>
+        </nav>
+      </aside>
+      <main class="offline-patient-main">
+        <header class="offline-patient-header">
+          <div>
+            <p class="offline-eyebrow">Offline patient workspace</p>
+            <h1>Patients</h1>
+            <p id="offlineAccount" class="offline-muted"></p>
+          </div>
+          <div class="offline-header-actions">
+            <span id="offlineConnection" class="offline-state" role="status">
+              Checking local access…
+            </span>
+            <button
+              id="lockOfflineWorkspace"
+              class="btn-action"
+              type="button"
+              hidden
+            >
+              Lock local access
+            </button>
+            <button
+              id="retryOfflineConnection"
+              class="btn-action"
+              type="button"
+            >
+              Retry server check
+            </button>
+            <a id="offlineSignIn" href="/login" hidden>Sign in online</a>
+          </div>
+        </header>
+
+        <section id="offlineLocked" class="offline-panel" hidden>
+          <h2 id="offlineLockedHeading">Offline access is unavailable</h2>
+          <p id="offlineLockedMessage">
+            Sign in while connected to establish offline access for this
+            account.
+          </p>
+          <a class="btn-primary offline-link-button" href="/login">
+            Sign in to HealthSys
+          </a>
+        </section>
+
+        <section id="offlinePatientContent" hidden>
+          <p class="offline-notice" role="status">
+            These records are stored on this device and may not include recent
+            server changes. Local edits are saved before they are queued; the
+            server has not confirmed them until synchronization completes.
+          </p>
+          <section
+            class="offline-panel offline-toolbar"
+            aria-label="Patient tools"
+          >
+            <label class="offline-search">
+              Search local patients
+              <input
+                id="offlineSearch"
+                type="search"
+                placeholder="Name, ID, or phone"
+              />
+            </label>
+            <button id="showAddPatient" class="btn-primary" type="button">
+              Add patient
+            </button>
+            <button
+              id="syncOfflineChanges"
+              class="btn-action"
+              type="button"
+              disabled
+            >
+              Sync pending changes
+            </button>
+          </section>
+
+          <form
+            id="offlinePatientForm"
+            class="offline-panel offline-form offline-add-form"
+            hidden
+          >
+            <header class="offline-form-header">
+              <div>
+                <h2 id="offlineFormHeading">Add Patient</h2>
+                <p>
+                  Enter patient details below. Your changes will be saved on
+                  this device and can be synchronized when the server is
+                  available.
+                </p>
+              </div>
+            </header>
+            <div id="offlineFormFields" class="offline-form-grid"></div>
+            <footer class="offline-form-footer">
+              <p>
+                Changes stay on this device until HealthSys confirms
+                synchronization.
+              </p>
+              <div class="offline-form-actions">
+                <button id="cancelOfflineForm" class="btn-action" type="button">
+                  Cancel
+                </button>
+                <button class="btn-primary" type="submit">
+                  Save on this device
+                </button>
+              </div>
+            </footer>
+          </form>
+
+          <p id="offlineQueueStatus" class="offline-muted" role="status"></p>
+          <p
+            id="offlineActionStatus"
+            class="offline-action-status"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <section class="offline-panel">
+            <div class="offline-table-wrap">
+              <table class="offline-patient-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Patient</th>
+                    <th scope="col">Date of birth</th>
+                    <th scope="col">Phone</th>
+                    <th scope="col">Local status</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="offlinePatientRows"></tbody>
+              </table>
+            </div>
+            <p id="offlineEmptyState" class="offline-empty" hidden>
+              No locally stored patients match this search.
+            </p>
+          </section>
+        </section>
+      </main>
+    </div>
+    <main id="offlineBoot" class="offline-boot" role="status">
+      Opening the HealthSys offline workspace…
+    </main>
+    <dialog id="offlineEditDialog" class="offline-edit-dialog">
+      <form id="offlineEditForm" class="offline-panel offline-form">
+        <h2>Edit patient on this device</h2>
+        <div id="offlineEditFields" class="offline-form-grid"></div>
+        <div class="offline-form-actions">
+          <button class="btn-primary" type="submit">Save local edit</button>
+          <button id="cancelOfflineEdit" class="btn-action" type="button">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

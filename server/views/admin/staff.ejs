@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Staff Management | HealthSys</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/ui-modernization.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <script src="/js/offline-access.js"></script>
+    <script src="/js/status.js"></script>
+    <script src="/js/dexie.min.js"></script>
+    <script src="/js/db.js"></script>
+    <script src="/js/ui.js" defer></script>
+    <script src="/js/sw-register.js"></script>
+</head>
+<body data-user-id="<%= user.id %>" data-user-name="<%= user.username %>" data-user-role="<%= user.role %>" data-csrf-token="<%= csrfToken %>">
+    <div class="dashboard-container">
+        <%- include('../partials/sidebar', { activePage: 'staff' }) %>
+        <main class="main-content">
+            <header class="navbar">
+                <div class="page-title"><h3>Staff Management</h3></div>
+                <div class="user-controls"><span data-current-user><%= user.username %> (<%= user.role %>)</span></div>
+            </header>
+            <div class="content-wrapper fade-in">
+                <% if (error) { %><div class="notice notice-error" role="alert"><%= error %></div><% } %>
+                <% if (success) { %><div class="notice notice-success" role="status"><%= success %></div><% } %>
+
+                <section class="stat-card staff-create-card">
+                    <h4>Add Staff Account</h4>
+                    <form method="POST" action="/admin/staff" class="staff-create-form">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <div class="form-group">
+                            <label for="new-username">Username</label>
+                            <input id="new-username" type="text" name="username" class="form-control"
+                                   required minlength="3" maxlength="32" pattern="[A-Za-z0-9._-]{3,32}"
+                                   autocomplete="off" placeholder="jdoe">
+                            <small>3-32 letters, numbers, periods, underscores, or hyphens.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-password">Temporary password</label>
+                            <div class="password-control">
+                                <input id="new-password" type="password" name="password" class="form-control"
+                                       required minlength="12" maxlength="72" autocomplete="new-password">
+                                <button type="button" class="btn-action" data-password-toggle="new-password"
+                                        aria-controls="new-password" aria-pressed="false">Show</button>
+                            </div>
+                            <small>At least 12 characters; use three character types.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-role">Role</label>
+                            <select id="new-role" name="role" class="form-control" required>
+                                <option value="staff">Staff</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn-primary">Create Account</button>
+                    </form>
+                </section>
+
+                <div class="table-container" tabindex="0" role="region" aria-label="Staff accounts table">
+                    <table>
+                        <thead>
+                            <tr><th>Username</th><th>Role</th><th>Status</th><th>Last Login (UTC)</th><th>Created</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody>
+                            <% users.forEach((staff) => { %>
+                                <tr>
+                                    <td><strong><%= staff.username %></strong></td>
+                                    <td><%= staff.role %></td>
+                                    <td><span class="status-pill <%= staff.is_active ? 'status-pill-active' : 'status-pill-disabled' %>"><%= staff.is_active ? 'Active' : 'Disabled' %></span></td>
+                                    <td>
+                                        <% if (staff.last_login) { %>
+                                            <%= new Date(`${String(staff.last_login).replace(' ', 'T')}Z`).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' }) %> UTC
+                                        <% } else { %>Never logged in<% } %>
+                                    </td>
+                                    <td><%= staff.created_at ? new Date(`${String(staff.created_at).replace(' ', 'T')}Z`).toLocaleDateString('en-US', { timeZone: 'UTC' }) : '-' %></td>
+                                    <td>
+                                        <div class="staff-actions">
+                                        <form method="POST" action="/admin/staff/<%= encodeURIComponent(staff.id) %>/status"
+                                              <%= staff.is_active ? `data-confirm="Disable ${staff.username}? They will lose access immediately." data-confirm-title="Disable staff account"` : '' %>>
+                                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                            <input type="hidden" name="is_active" value="<%= staff.is_active ? 'false' : 'true' %>">
+                                            <button type="submit" class="btn-action"><%= staff.is_active ? 'Disable' : 'Enable' %></button>
+                                        </form>
+                                        <button type="button" class="btn-action" aria-expanded="false"
+                                                aria-controls="security-<%= encodeURIComponent(staff.id) %>"
+                                                onclick="toggleSecurityPanel(this)">Security</button>
+                                        </div>
+                                        <div id="security-<%= encodeURIComponent(staff.id) %>" class="staff-security-panel" hidden>
+                                            <form method="POST" action="/admin/staff/<%= encodeURIComponent(staff.id) %>/reset-password"
+                                                  data-confirm="Reset the password for <%= staff.username %>? The current password will not be revealed." data-confirm-title="Reset password">
+                                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                <label for="reset-<%= encodeURIComponent(staff.id) %>">Set a new password for <%= staff.username %></label>
+                                                <div class="password-control">
+                                                    <input id="reset-<%= encodeURIComponent(staff.id) %>" class="form-control" type="password" name="password"
+                                                           required minlength="12" maxlength="72" autocomplete="new-password">
+                                                    <button type="button" class="btn-action"
+                                                            data-password-toggle="reset-<%= encodeURIComponent(staff.id) %>"
+                                                            aria-controls="reset-<%= encodeURIComponent(staff.id) %>" aria-pressed="false">Show</button>
+                                                </div>
+                                                <button type="submit" class="btn-action">Reset Password</button>
+                                            </form>
+                                            <form method="POST" action="/admin/staff/<%= encodeURIComponent(staff.id) %>/role"
+                                                  data-confirm="Update the role for <%= staff.username %>?" data-confirm-title="Change staff role">
+                                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                <label for="role-<%= encodeURIComponent(staff.id) %>">Role</label>
+                                                <select id="role-<%= encodeURIComponent(staff.id) %>" name="role" required>
+                                                    <option value="staff" <%= staff.role === 'staff' ? 'selected' : '' %>>Staff</option>
+                                                    <option value="admin" <%= staff.role === 'admin' ? 'selected' : '' %>>Admin</option>
+                                                </select>
+                                                <button type="submit" class="btn-action">Update Role</button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script>
+        function toggleSecurityPanel(button) {
+            const panel = document.getElementById(button.getAttribute('aria-controls'));
+            panel.hidden = !panel.hidden;
+            button.setAttribute('aria-expanded', String(!panel.hidden));
+        }
+    </script>
+</body>
+</html>

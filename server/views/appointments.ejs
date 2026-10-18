@@ -1,0 +1,189 @@
+<%
+  const datePart = (value) => String(value || '').slice(0, 10);
+  const timePart = (value) => String(value || '').slice(11, 16);
+  const statusName = (value) => ({
+    scheduled: 'Upcoming',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
+    missed: 'Missed',
+  })[value] || value;
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Appointments | HealthSys</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/ui-modernization.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <script src="/js/ui.js" defer></script>
+</head>
+<body class="appointments-page" data-user-id="<%= user.id %>" data-user-name="<%= user.username %>" data-user-role="<%= user.role %>" data-csrf-token="<%= csrfToken %>">
+  <div class="dashboard-container">
+    <%- include('partials/sidebar', { activePage: 'appointments' }) %>
+    <main class="main-content">
+      <header class="navbar">
+        <div class="page-title"><h3>Appointments</h3></div>
+        <div class="user-controls">
+          <a class="btn-primary appointment-schedule-link" href="/patients">Schedule from a patient profile</a>
+        </div>
+      </header>
+      <div class="content-wrapper fade-in">
+        <% if (error) { %><div class="notice notice-error" role="alert"><%= error %></div><% } %>
+        <% if (message) { %><div class="notice notice-success" role="status"><%= message %></div><% } %>
+        <p class="appointment-time-note">All appointment times are stored and displayed in UTC to avoid local timezone and daylight-saving ambiguity.</p>
+
+        <section class="profile-card appointment-filters" aria-labelledby="appointmentFiltersHeading">
+          <h2 id="appointmentFiltersHeading">Find appointments</h2>
+          <form method="GET" action="/appointments" class="appointment-filter-grid">
+            <div class="form-group">
+              <label for="appointmentSearch">Patient</label>
+              <input class="form-control" id="appointmentSearch" name="search" value="<%= filters.search || '' %>" maxlength="100" placeholder="Name, patient ID, or phone">
+            </div>
+            <div class="form-group">
+              <label for="appointmentStatus">Status</label>
+              <select class="form-control" id="appointmentStatus" name="status">
+                <option value="all" <%= filters.status === 'all' ? 'selected' : '' %>>All statuses</option>
+                <option value="scheduled" <%= filters.status === 'scheduled' ? 'selected' : '' %>>Upcoming</option>
+                <option value="completed" <%= filters.status === 'completed' ? 'selected' : '' %>>Completed</option>
+                <option value="cancelled" <%= filters.status === 'cancelled' ? 'selected' : '' %>>Cancelled</option>
+                <option value="missed" <%= filters.status === 'missed' ? 'selected' : '' %>>Missed</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="appointmentFrom">From date (UTC)</label>
+              <input class="form-control" id="appointmentFrom" type="date" name="fromDate" value="<%= filters.fromDate || '' %>">
+            </div>
+            <div class="form-group">
+              <label for="appointmentTo">To date (UTC)</label>
+              <input class="form-control" id="appointmentTo" type="date" name="toDate" value="<%= filters.toDate || '' %>">
+            </div>
+            <% if (user.role === 'admin') { %>
+              <div class="form-group">
+                <label for="appointmentStaff">Assigned staff</label>
+                <select class="form-control" id="appointmentStaff" name="staff">
+                  <option value="">All staff</option>
+                  <% staff.forEach(member => { %>
+                    <option value="<%= member.id %>" <%= filters.staff === member.id ? 'selected' : '' %>><%= member.username %></option>
+                  <% }); %>
+                </select>
+              </div>
+            <% } %>
+            <div class="appointment-filter-actions">
+              <button class="btn-primary" type="submit">Apply filters</button>
+              <a class="btn-reset" href="/appointments">Reset</a>
+            </div>
+          </form>
+        </section>
+
+        <section class="profile-card profile-section appointment-list-section" aria-labelledby="appointmentListHeading">
+          <div class="appointment-list-heading">
+            <div>
+              <h2 id="appointmentListHeading">Appointment list</h2>
+              <p><%= pagination.total || 0 %> appointment<%= pagination.total === 1 ? '' : 's' %></p>
+            </div>
+          </div>
+          <% if (!appointments.length) { %>
+            <p class="appointment-empty">No appointments match these filters. Schedule from the selected patient's profile.</p>
+          <% } else { %>
+            <div class="table-container" tabindex="0" role="region" aria-label="Appointment list">
+              <table class="appointment-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Patient</th>
+                    <th scope="col">Date and time (UTC)</th>
+                    <th scope="col">Purpose</th>
+                    <th scope="col">Assigned staff</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% appointments.forEach(appointment => { %>
+                    <tr>
+                      <td>
+                        <a href="/patients/<%= encodeURIComponent(appointment.patient_id) %>"><%= appointment.patient_name %></a>
+                        <small><%= appointment.patient_id %></small>
+                      </td>
+                      <td><time datetime="<%= appointment.start_at_utc.replace(' ', 'T') %>Z"><%= datePart(appointment.start_at_utc) %> · <%= timePart(appointment.start_at_utc) %></time><small><%= appointment.duration_minutes %> minutes</small></td>
+                      <td><%= appointment.reason || 'Not specified' %></td>
+                      <td><%= appointment.staff_name %></td>
+                      <td><span class="appointment-status appointment-status-<%= appointment.status %>"><%= statusName(appointment.status) %></span></td>
+                      <td>
+                        <div class="appointment-actions">
+                          <a class="btn-action appointment-action-button" href="/patients/<%= encodeURIComponent(appointment.patient_id) %>#appointment-<%= encodeURIComponent(appointment.id) %>">View</a>
+                          <% if (appointment.status === 'scheduled') { %>
+                            <details class="appointment-reschedule">
+                              <summary class="btn-action">Reschedule</summary>
+                              <form method="POST" action="/appointments/<%= encodeURIComponent(appointment.id) %>/reschedule" class="appointment-reschedule-form">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                <input type="hidden" name="return_to" value="/appointments">
+                                <input type="hidden" name="patient_id" value="<%= appointment.patient_id %>">
+                                <input type="hidden" name="version" value="<%= appointment.version %>">
+                                <input type="hidden" name="operation_id" value="<%= appointment.rescheduleOperationId %>">
+                                <label>Date (UTC)<input class="form-control" type="date" name="appointment_date" value="<%= datePart(appointment.start_at_utc) %>" required></label>
+                                <label>Start time (UTC)<input class="form-control" type="time" name="start_time" value="<%= timePart(appointment.start_at_utc) %>" required></label>
+                                <label>Duration (5–240 minutes)
+                                  <input class="form-control" type="number" name="duration_minutes" min="5" max="240" step="5" value="<%= appointment.duration_minutes %>" required>
+                                </label>
+                                <% if (user.role === 'admin') { %>
+                                  <label>Assigned staff
+                                    <select class="form-control" name="assigned_staff_id" required>
+                                      <% staff.forEach(member => { %>
+                                        <option value="<%= member.id %>" <%= appointment.assigned_staff_id === member.id ? 'selected' : '' %>><%= member.username %></option>
+                                      <% }); %>
+                                    </select>
+                                  </label>
+                                <% } %>
+                                <label>Purpose<input class="form-control" name="reason" maxlength="500" value="<%= appointment.reason %>"></label>
+                                <button class="btn-primary" type="submit">Save new time</button>
+                              </form>
+                            </details>
+                            <form method="POST" action="/appointments/<%= encodeURIComponent(appointment.id) %>/cancel" data-confirm="Cancel this appointment? Its history will be retained." data-confirm-title="Cancel appointment">
+                              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                              <input type="hidden" name="return_to" value="/appointments">
+                              <input type="hidden" name="version" value="<%= appointment.version %>">
+                              <input type="hidden" name="operation_id" value="<%= appointment.cancelOperationId %>">
+                              <button class="btn-danger appointment-action-button" type="submit">Cancel</button>
+                            </form>
+                            <% if (appointment.canComplete) { %>
+                              <form method="POST" action="/appointments/<%= encodeURIComponent(appointment.id) %>/complete">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                <input type="hidden" name="return_to" value="/appointments">
+                                <input type="hidden" name="version" value="<%= appointment.version %>">
+                                <input type="hidden" name="operation_id" value="<%= appointment.completeOperationId %>">
+                                <button class="btn-action appointment-action-button" type="submit">Complete</button>
+                              </form>
+                            <% } %>
+                            <% if (appointment.canMiss) { %>
+                              <form method="POST" action="/appointments/<%= encodeURIComponent(appointment.id) %>/missed" data-confirm="Mark this appointment as missed?">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                <input type="hidden" name="return_to" value="/appointments">
+                                <input type="hidden" name="version" value="<%= appointment.version %>">
+                                <input type="hidden" name="operation_id" value="<%= appointment.missedOperationId %>">
+                                <button class="btn-danger appointment-action-button" type="submit">Missed</button>
+                              </form>
+                            <% } %>
+                          <% } %>
+                        </div>
+                      </td>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
+            <% if (pagination.pages > 1) { %>
+              <nav class="appointment-pagination" aria-label="Appointment pages">
+                <% if (pagination.page > 1) { %><a class="btn-reset" href="?<%= filters.queryString %>&page=<%= pagination.page - 1 %>">Previous</a><% } %>
+                <span>Page <%= pagination.page %> of <%= pagination.pages %></span>
+                <% if (pagination.page < pagination.pages) { %><a class="btn-reset" href="?<%= filters.queryString %>&page=<%= pagination.page + 1 %>">Next</a><% } %>
+              </nav>
+            <% } %>
+          <% } %>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

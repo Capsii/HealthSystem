@@ -1,0 +1,477 @@
+The patient modal now includes these optional clinical fields:
+
+Emergency contact name
+Emergency contact relationship
+Emergency contact phone
+Allergies
+Medical history
+Medications
+
+
+
+
+
+Iteration 2:
+Implemented the Patient Management and dashboard/synchronization changes. The final npm test run passed all 12 tests. This included integration tests against the configured database; the offline and sync lifecycle tests use mocked browser storage and requests, not a live browser.
+
+Files changed
+Patient management and migration: Patient.js, migrate_patient_management.js, patients.js, patients.js, patients.ejs, patient-profile.ejs.
+Dashboard, sync, and offline support: dashboard.js, dashboard.js, db.js, sync.js, service-worker.js, offline.html, style.css, dashboard.ejs.
+Staff consistency and scripts: admin.js, staff.ejs, package.json.
+Tests: dashboard-sync.test.js, patient-management.integration.test.js.
+Validation and commands
+
+
+The patient migration adds the clinical fields and visit/activity tables without dropping existing data. It is safe to run against the existing schema. No dashboard SQL migration is required; the IndexedDB schema upgrades automatically.
+
+Verified: pagination and patient creation with clinical fields against the configured database; profile, visit, and activity rendering; database-backed dashboard counts and admin-only destinations; local queue, sync success/failure/partial confirmation behavior, and timestamp persistence in the mocked client tests. JavaScript syntax checks, EJS rendering checks, role-aware dashboard rendering, and task-file whitespace checks also passed.
+
+Not verified in a real browser: service-worker/offline navigation, real IndexedDB upgrades, or cross-tab synchronization. Those remain browser-level checks. The unrelated modified Shit To Improve On.txt was left untouched.
+
+
+Iteration 3:
+Implemented
+Staff account changes now go through server-side validation and authorization. Usernames are trimmed, restricted to 3–32 ASCII letters, numbers, periods, underscores, and hyphens, and protected by a case-insensitive unique database index. Passwords must be at least 12 characters, meet a three-character-type strength rule, and fit bcrypt’s 72-byte limit.
+
+Admins can create accounts, reset passwords, change roles, and enable or disable accounts. Staff can change their own password after verifying the current one. Passwords are bcrypt-hashed, never shown to admins, and reset/change operations increment a session version to revoke other sessions. Protected requests check the account’s current active status and role against the database. Last-active-admin changes are transactionally guarded; account mutations also require CSRF tokens.
+
+Staff account actions require an online connection. The sync endpoint no longer accepts user-account operations, and the Dexie v4 upgrade removes legacy queued user operations, which could contain plaintext password data. The service worker no longer caches staff or account pages.
+
+Migration and commands
+I applied the additive staff migration to the configured TiDB/MySQL database. It adds a normalized username column and unique index, a session-version column, and a NULL default for last_login. The migration checks for existing case/whitespace username collisions and stops with instructions if any are found; it does not delete account records. No new environment variables or dependencies are required.
+The staff migration was run successfully and again during the tests. If the earlier patient migration has not yet been applied in this deployment, also run npm run migrate:patients.
+
+Files changed
+Backend, authentication and migration: auth middleware, staff validation, admin routes, account routes, login routes, registration routes, sync route, app setup, staff security migration.
+Account bootstrap and scripts: admin bootstrap, debug registration script, package scripts. The unused duplicate server/routes/auth.js was removed.
+PWA handling and presentation: Dexie database, service worker, styles, staff view, password-change view, login view, registration view, dashboard view, patients view, patient profile view, reports view.
+Tests: staff security integration tests, patient integration tests, dashboard sync tests.
+Verification and limitations
+The final npm test run passed 20 tests, 0 failures. The staff integration tests exercised the Express backend against the configured database, including username validation and case-variant duplicates, password changes and resets, login timestamps, disabled-account denial for existing sessions, role/CSRF rejection, re-enabling accounts, and last-admin/concurrent status changes. Failed login attempts left last_login unchanged; a successful login recorded it. EJS rendering, JavaScript syntax, and changed-file whitespace checks also passed.
+
+Show/hide controls, the disable confirmation, and duplicate-submit guards are implemented and template-checked, but I did not verify those interactions in a real browser. The Dexie v4 upgrade and service-worker cache behavior were not exercised against a live browser/IndexedDB instance.
+
+Iteration 4:
+Implemented the Reports accuracy changes.
+
+What changed
+admin.js now calculates report metrics from the database, validates filters, uses parameterized date values, and shows an explicit error instead of misleading zero totals when report queries fail. Successful and error responses are marked no-store.
+report_filters.js adds validated UTC date ranges: today, last 7 days, last 30 days, custom inclusive dates, and all time.
+reports.ejs displays metric definitions, generation time, empty/error states, server sync history, and the device-local queue status.
+dashboard.js aligns the patient total with the management page’s all-record count.
+offline.html clarifies that server reports and sync history are unavailable offline.
+report-filters.test.js and patient-management.integration.test.js cover date semantics and report/database reconciliation.
+package.json includes the report-filter tests in npm test.
+Definitions and filtering
+Active patients: is_deleted = FALSE. Deleted: is_deleted = TRUE. Unknown status: is_deleted IS NULL; shown separately and excluded from active/deleted counts.
+Registration cohorts use patients.created_at and include only active patients. Custom end dates are inclusive; SQL uses the following UTC midnight as the exclusive upper bound.
+Active staff: non-deleted and is_active = TRUE. Disabled staff: non-deleted and inactive or NULL status. Soft-deleted staff are reported separately and excluded from active staff totals.
+Sync history distinguishes success, failure, partial failure, and legacy unknown outcomes using server logs. The browser’s pending/processing/failed queue is shown separately and is device-specific.
+
+Iteration 5:
+Implemented shared UI and accessibility improvements across the main HealthSys screens.
+
+Changes made
+Added ui.js for active-route highlighting, desktop sidebar collapse, a keyboard-accessible mobile drawer, server/local-queue/sync status indicators, confirmation dialogs, notifications, password visibility toggles, duplicate-submit feedback, and unsaved-form warnings.
+Updated style.css with shared control styles, focus indicators, reduced-motion support, notification/dialog styles, and responsive navigation and table layouts.
+Updated status.js to distinguish no network from an unreachable server.
+Updated dashboard.js to avoid showing a loading message over server-rendered metrics and use consistent UTC timestamps.
+Updated patients.js and the patient views to use accessible confirmations, inline date/required-field validation, and clear offline-save feedback.
+Updated the account, dashboard, login, patient list/profile, staff, reports, and registration views to use the shared UI, improve labels and navigation, and show consistent status and action feedback: account-password.ejs, dashboard.ejs, login.ejs, patients.ejs, patient-profile.ejs, staff.ejs, reports.ejs, and register.ejs.
+Bumped the service-worker cache and added the shared UI script to the app shell in service-worker.js.
+Updated the staff integration test’s UI assertion in staff-security.integration.test.js.
+No dependencies or database migration were added. Existing server-side authorization and CRUD behavior remain in place.
+
+Verification
+npm test: 26 passed, 0 failed, including configured-database integration tests.
+JavaScript syntax checks, compilation of all primary EJS views, and git diff --check: passed.
+Browser checks on an isolated UI fixture at 390, 768, and 1440 px found no horizontal page overflow. Sidebar collapse/drawer, keyboard Escape handling, role-based admin-link visibility, confirmation Cancel/Confirm behavior, unsaved-change warning, password show/hide without clearing the value, and success feedback were exercised.
+Remaining limitations
+The browser fixture tested layout and interactions, not real patient or staff data or every page at every viewport. Offline queue behavior is covered by the existing tests, but the global indicator was not browser-tested through a real network interruption. I did not run a full WCAG contrast or screen-reader audit; tables intentionally use a horizontally scrollable container on narrow screens. A normal npm start attempt encountered an existing listener on port 3443, so I used and then stopped a separate local fixture server for browser checks.
+
+Iteration 6:
+The core data-integrity and synchronization changes are implemented. Patient creates and sync operations now use stable UUIDs, shared server validation, normalized phone numbers, optimistic version checks, and transactional activity logging. Sync retries are idempotent: an operation ID is stored with a hash of its payload, and reusing that ID with different data is reported as a conflict. Failed or malformed operations remain queued rather than being silently discarded.
+
+Offline patient creation and queue insertion are atomic. Offline deletion is queued atomically with a local tombstone. Restoration now checks the record version too.
+
+Migration: Added an additive, repeatable sync_operations table migration. It was applied during the integration tests against the configured database. For another deployment, configure its .env for the intended TiDB target, then run:
+
+
+The migration creates a table only; no patient or staff data cleanup is required. No new uniqueness rule was added for patient phone numbers.
+
+Validation: npm test passed 33 tests, 0 failures. After updating the sync retry integration test to simulate a retry in a separate request, the configured-database patient integration suite passed 9 tests, 0 failures. JavaScript syntax checks and git diff --check also passed. These tests cover UUID and phone validation, atomic offline writes, create/retry idempotency, duplicate IDs, stale and concurrent edits, and preservation of creation timestamps.
+
+Not verified: I did not run 1,000/10,000-record load tests or a real-browser offline/network-interruption test; offline storage behavior was tested with an in-memory Dexie harness. The operation ledger has no retention/purge policy, and there is no dedicated UI for reviewing individual failed queue items.
+
+Iteration 7:
+Implemented the backup and recovery features while preserving the existing authentication and offline-sync model.
+
+Implemented
+Patient CSV: Active-record export is available to authenticated clinical users; Admins can explicitly include deleted records. Export is streamed in batches, quotes CSV fields, neutralizes formula-leading values, and excludes staff credentials and session data.
+CSV import: Admin-only preview and import validates CSV structure, patient fields, dates, and duplicate IDs. Imports are all-or-nothing transactions; existing patient records are never overwritten.
+Server backups: The Admin recovery page creates a streamed, versioned backup of patients, visits, activity, staff metadata, audit history, sync operations, and sync history. Password hashes and session credentials are excluded.
+Server restore: Validates the backup and permits restore only into a fresh database with a single temporary Admin account. Restore requires explicit confirmation and runs transactionally. Restored staff passwords must be reset.
+Local offline recovery: Dashboard users can export and restore a separate, account-bound file containing local patient snapshots and pending changes. Existing local records and operation IDs are not overwritten. Unsupported queue payloads are omitted.
+Offline safeguards: IndexedDB open failures are surfaced without automatically deleting the database. Malformed sync operations remain queued for review, and logout warns about pending or review-required operations.
+Documentation and migration: Added a repeatable sync-history migration and documented migration, backup, restore, offline recovery, and storage limitations.
+
+Files changed for this work
+Routes and helpers: recovery.js, patients.js, patient_csv.js, backup_format.js, app.js
+Migration and scripts: migrate_sync_logs.js, package.json
+Browser recovery and sync: db.js, ui.js, admin-recovery.js, offline-recovery.js, service-worker.js
+Views and documentation: data-recovery.ejs, dashboard.ejs, patients.ejs, staff.ejs, reports.ejs, SECURITY.md
+Tests: backup-recovery.test.js, dashboard-sync.test.js, patient-management.integration.test.js
+No dependencies were added. The only new database migration is migrate_sync_logs; there is no destructive migration.
+
+Verification
+npm test: 50 passed, 0 failed.
+After adding the sync-history migration, the patient/CSV database integration suite passed 10/10, including CSV preview/import, atomic rejection, duplicate prevention, and Staff denial.
+Final recovery and offline tests passed 20/20.
+JavaScript syntax checks, EJS compilation, and git diff --check passed.
+Not tested: creating/restoring a server backup against a separate fresh database, or recovery against a real corrupted browser IndexedDB. No backup was downloaded or restored. The configured-database tests do not establish that a production restore works.
+
+Applying migrations and using recovery
+Before running migrations, take and verify a TiDB Cloud snapshot/backup, then confirm the project .env points to the intended database. Run in PowerShell:
+npm run migrate:patients
+npm run migrate:staff-security
+npm run migrate:security-audit
+npm run migrate:sync-idempotency
+npm run migrate:sync-logs
+
+To create a server backup, sign in as Admin, open Data recovery, and select Create and download backup; confirm the prompt and store the downloaded file securely.
+
+To recover a local offline backup, use Local offline recovery on the dashboard. It must be imported while signed into the same account. This file is separate from the server backup and is not encrypted.
+
+For a server restore, first provision a separate fresh test database and apply the migrations above. Create exactly one temporary Admin account with node createAdmin.js, set a strong RESTORE_ADMIN_PASSWORD in the server environment, and start the app. On Data recovery, upload the backup, validate its contents and target, then confirm the restore by typing RESTORE. Sign in again using the restored active Admin username and RESTORE_ADMIN_PASSWORD; reset other staff passwords and remove the temporary environment variable. Test this procedure on the separate database before any production recovery.
+
+The full restore procedure and limitations are documented in SECURITY.md. Server backups do not include unsynchronized changes on a user’s device; export the local offline backup separately.
+
+
+Iteration 8:
+Added the two-client conflict scenarios as a documented release gate. The tests cover same-field and different-field edits, an offline stale edit, edit/delete races in both orders, and retries of stale operations. They assert explicit version_mismatch conflicts and verify stale edits do not overwrite newer database values. The policy is to reject stale full-record edits; there is no automatic field-level merge.
+
+Files changed
+
+patient-management.integration.test.js — adds the conflict scenarios and fails closed unless DB_NAME identifies a dedicated test database.
+package.json — adds npm run test:release.
+SECURITY.md — documents the conflict policy, scenarios, and release command.
+Verification
+
+Offline queue and PWA tests: 19 passed.
+Patient validation and security tests: 5 passed.
+The database integration suite was blocked safely: the configured DB_NAME does not identify a test database, so the guard stopped it before migrations or writes. The new database conflict scenarios have not yet been verified against a database.
+To run the release gate, configure .env for an isolated test database with DB_NAME containing test, testing, or ci, then run:
+
+
+The repository has no CI workflow to enforce this command automatically; it is now an explicit release command and documented requirement.
+
+Iteration 9:
+Implemented the architecture changes incrementally, preserving the existing Express/EJS and offline-sync design.
+
+What changed
+Added a shared server-side patient repository for filtered/paginated listing, patient lookup and writes, version-guarded edits/deletion, restoration, and dashboard/report counts. Patient routes, sync, dashboard, and reports use it where appropriate. Pagination and sort values are validated before query construction.
+Added startup configuration validation, request IDs, safe fallback error handling, and structured logging with an allowlist of log fields to avoid emitting patient details or credentials.
+Added a version-tracking migration runner for the additive migration set, plus .env.example and setup/migration/testing documentation.
+Added ESLint and Prettier scripts, and expanded unit coverage for the repository, configuration, migration runner, error handling, safe logging, and integration-test safety.
+The destructive database integration tests now require both a test-like database name and explicit opt-in.
+Files changed for this architecture phase
+Created: README.md, eslint.config.js, .prettierrc.json, .prettierignore, server/config.js, server/error_handlers.js, server/logger.js, server/migrate.js, server/patient_repository.js, server/tests/config.test.js, server/tests/error-handlers.test.js, server/tests/integration_test_guard.js, server/tests/integration-test-guard.test.js, server/tests/logger.test.js, server/tests/migrations.test.js, server/tests/patient-repository.test.js.
+
+Modified: .gitignore, .env.example, package.json, package-lock.json, server/app.js, server/db.js, server/models/Patient.js, server/routes/admin.js, server/routes/dashboard.js, server/routes/patients.js, server/routes/sync.js, server/tests/patient-management.integration.test.js, server/tests/staff-security.integration.test.js.
+
+The worktree also contains changes from earlier patient-management, backup/recovery, and PWA requests; those were preserved rather than reverted.
+
+Dependencies and commands
+Added ESLint, @eslint/js, and globals as development dependencies; no runtime dependencies were added.
+
+npm test — passed: 51 tests
+npm run lint — passed
+npm run format:check — passed
+git diff --check on the architecture files — passed
+Database and deployment verification
+No database integration tests or migrations were run. The configured database is project, which is not an isolated test database. The unit tests verify the integration-test guard, but that is not database testing.
+
+After provisioning a disposable test database and configuring its connection, run:
+
+$env:DB_NAME = "project"
+$env:ALLOW_DESTRUCTIVE_INTEGRATION_TESTS = "true"
+npm run test:integration
+Remove-Item Env:ALLOW_DESTRUCTIVE_INTEGRATION_TESTS
+
+
+Back up the database and test the migration runner against a separate disposable database before deployment. The new Patient.create model wrapper returns the generated UUID; there were no in-repository callers to assess for reliance on its previous return value. Some route-local error responses and legacy code remain outside the current lint/format scope. Actual TiDB migration/integration, installed-PWA, offline-browser, and real multi-client conflict testing remain to be done. The ESLint install also reported npm audit advisories that have not been triaged.
+
+Iteration 10:
+Implemented the queue-integrity and conflict-handling changes.
+
+Behavior
+Stable retries: The client persists each operation ID before sending. Timeouts and retryable HTTP failures retain the queue entry and ID; retries use jittered backoff, honor Retry-After, and can be forced with Sync Now.
+Acknowledgement safety: /sync returns a result per operation ID. The client removes an item only for a matching applied or already_applied result; indexes alone are no longer treated as confirmation. Confirmed patient snapshots and queue removals are saved together.
+Conflict preservation: Conflicts retain the local draft and server snapshot in IndexedDB. The dashboard shows both versions and offers an explicit choice to use the server version or rebase an eligible local change as a new operation ID. Stale updates are not silently merged.
+Restart and update safety: Recovery marks interrupted operations retryable after acquiring the cross-tab sync lock. Dexie version 7 normalizes legacy queue metadata without clearing patient drafts; service-worker cache version is now v36.
+Files changed
+server/public/js/db.js, server/public/js/dashboard.js, server/views/dashboard.ejs, server/routes/sync.js, server/patient_repository.js, server/public/service-worker.js, server/public/js/sw-register.js, server/tests/dashboard-sync.test.js, server/tests/patient-management.integration.test.js, server/tests/patient-repository.test.js, server/tests/pwa-service-worker.test.js, and README.md. No dependencies or server-side schema migrations were added; the existing sync_operations idempotency table is still required.
+
+Verification
+Passed: npm test (58 tests), npm run lint, npm run format:check, JavaScript syntax checks, formatting checks for modified JavaScript, and git diff --check.
+
+Blocked / not run: Database integration tests and migrations were not run because the configured database is project, not a disposable test database. Browser-based offline/restart and real two-client conflict testing also remain necessary.
+
+Remaining limitation: Conflict review is available on the dashboard after reconnecting. There is not yet an in-app correction workflow for permanently validation-failed operations; those remain queued and visible for review and local backup. The offline patient workspace still does not provide a complete offline edit workflow.
+
+
+
+
+
+
+
+
+
+Passed
+npm test: 60 passed, 0 failed.
+npm run lint and npm run format:check: passed.
+JavaScript syntax checks and git diff --check: passed.
+npm audit --omit=dev: 0 production advisories.
+In a local browser harness with synthetic data and no database connection, I verified that:
+The service worker installed, activated, controlled the page, and cached the required offline shell.
+/patients opened the offline workspace when the server was unavailable.
+An offline patient edit and its queued operation survived a page reload.
+A simulated v37 worker update preserved the queued operation and removed the older cache.
+A mock sync response acknowledged the operation; the local queue cleared and the patient version advanced.
+Failed
+The browser update simulation activated the new worker, but the page remained on the “Activating the update” notice with its button stuck. The offline reload also showed a warning that offline support was not initialized, even though the cached workspace worked. I added review comments on sw-register.js for both issues; they remain unresolved.
+npm audit reports 3 high-severity development dependency advisories through nodemon → chokidar → braces. npm’s offered --force fix is a breaking Nodemon downgrade; I did not apply it.
+Blocked
+Database integration and two-client conflict tests, migrations against a fresh database, and backup/restore verification were not run. The configured project database remains protected, and no separate disposable database was configured.
+
+The browser sync check used a local mock endpoint, not the HealthSys server. It does not verify server idempotency, real conflict handling, or actual database synchronization.
+Not Tested
+Installation from the deployed HTTPS origin.
+Browser restart durability (the browser test verified reload persistence only).
+Real server backup and restoration into a separate database.
+Fresh-environment migration/deployment verification.
+Production-browser offline, update, and reconnection behavior.
+No source files were changed in this continuation. The prior offline-edit/recovery implementation and dependency-lock changes are in db.js, offline-workspace.js, offline-workspace.html, dashboard.js, dashboard.ejs, dashboard-sync.test.js, and package-lock.json.
+
+Commands verified: npm test, npm run lint, npm run format:check, npm audit --omit=dev, and npm audit. The remaining release blockers are the update-transition issue and the unverified database, backup/restore, and real-server/browser workflows.
+
+
+Token: eyJhIjoiZmNlMDUyMTUzYmQ0OTRiZThhNGNmZjY1OGIyMjFhNGIiLCJ0IjoiMjhhYTkxYmMtNTliZC00MWQ2LWE3ZWUtYWI1ZDgyNzBlMjg3IiwicyI6Ik1HWXdOVEV5Wm1JdE0yRmlNQzAwWWpGa0xUazNORFV0T1RreU1XRm1PR1l6TjJNMyJ9
+
+
+bugs:
+
+the text size of navigation bar and symbols gets small when opening data recovery tab
+
+When PC goes offline everything stops responding and below shows:
+HealthSys needs to verify your session
+HealthSys could not verify your session. Patient data remains locked until a server response is available.
+
+This page is locked while the server is unavailable. Patient data and queued changes remain stored; no queued operation was removed.
+
+Reconnect and verify
+
+AND THE DAMN WEBSITE GOES UNRESPONSIVE LIKE THE CURSOR LOST ITS RIGHTS, let alone the offline mode, i cant even click a button
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# CRITICAL REGRESSION: RESTORE HEALTHSYS V2.0 OFFLINE-FIRST FUNCTIONALITY
+
+Your previous changes have broken the core purpose of HealthSys. You have NOT fixed offline functionality. You have replaced the application with an online-only experience that displays an offline error page.
+
+## Current regression
+
+When I disconnect the internet and open the Patients page, the application displays:
+
+"Offline mode — Patient access needs a connection"
+
+It also says that patient records and pending changes on the device cannot be opened from an offline page, and that sign-in and patient management require a connection.
+
+This is unacceptable for the intended architecture of HealthSys V2.0.
+
+**HealthSys is an offline-first healthcare registration PWA. Offline operation is a core requirement, not an optional enhancement.**
+
+The application previously had an offline patient workspace and locally stored records/queued changes. Your recent changes appear to have blocked access to that functionality instead of fixing the original UI freeze.
+
+## YOUR PRIMARY TASK: RESTORE THE EXISTING OFFLINE WORKFLOW
+
+Do not simply hide the error screen, change its wording, or add another retry button.
+
+Investigate the changes made during your previous attempt. Use Git diffs, the Restore Checkpoint feature, or other available project history to identify the exact modifications responsible for this regression.
+
+Preserve working changes unrelated to the regression.
+
+### 1. Restore offline patient management
+
+When the backend or internet connection becomes unavailable:
+
+- The application shell must continue loading through the existing service worker and cached application assets.
+- The Patients page must render its actual offline workspace, not a generic connection-required screen.
+- Read previously stored patient records from the existing local database, preferably the current IndexedDB implementation if that is what the project uses.
+- Display locally available records and clearly indicate that they are stored locally and may not represent the latest server state.
+- Allow users to add and edit patients offline when the existing data model supports those operations.
+- Support offline deletion only if the existing architecture implements it safely, including a queued deletion/tombstone rather than silently deleting server-side records.
+- Persist successful local changes immediately and survive a page refresh while offline.
+- Display the correct local-save and synchronization status.
+- Keep unrelated navigation and permitted controls responsive.
+
+Do not assume that the offline database is empty. Inspect the actual existing storage implementation and migration logic before modifying it.
+
+### 2. Remove the incorrect online-only gate
+
+Find the exact code that produces these messages:
+
+- "Patient access needs a connection"
+- "Sign-in and patient management require a connection to HealthSys."
+- "Patient records and pending changes on this device are not opened from an offline page."
+
+Determine whether a new page, route guard, authentication check, middleware response, or frontend conditional was introduced during the previous attempt.
+
+**Remove or redesign the blanket connection requirement for offline functionality.**
+
+An inability to contact the server must not automatically prevent the application from opening previously authorized local data through its intended offline-access mechanism.
+
+However, do not disable server-side authentication or authorization. Separate the following states:
+
+1. Online and authenticated.
+2. Network unavailable, with a previously established offline-access context.
+3. Server temporarily unreachable, even though the browser reports that it is online.
+4. Session genuinely expired or revoked.
+5. Device has no previously established authorization context.
+
+Implement behavior appropriate to each state. A temporary network failure must not be interpreted as proof that a session has expired. Likewise, offline mode must not grant arbitrary access to patient records on a device with no valid offline-access context.
+
+Use the application's existing offline-access design if one exists. If it does not, implement the smallest viable offline authorization mechanism compatible with the current architecture, and document any security limitations.
+
+### 3. Fix the original unresponsive UI bug
+
+The original issue was that losing connectivity caused HealthSys to become unclickable and display a session-verification failure.
+
+Investigate and fix the actual cause:
+
+- Global loading overlays or backdrops intercepting pointer events.
+- Global state incorrectly locking the application after an API error.
+- Authentication/session checks blocking unrelated frontend routes.
+- Requests that hang indefinitely or retry forever.
+- Promises and loading states that are never cleaned up.
+- Service worker navigation or cached asset failures.
+- Offline initialization failing to load the locally stored workspace.
+
+A failed request must not freeze the whole UI.
+
+Use reasonable request timeouts, reliable loading-state cleanup, and controlled retries. Keep the navigation, offline patient workspace, and permitted controls interactive while online-only requests are unavailable.
+
+### 4. Restore synchronization instead of discarding it
+
+The existing queued mutations must remain intact.
+
+- Preserve the current offline mutation queue and its data format.
+- Do not clear IndexedDB, local storage, queued mutations, or caches as a workaround.
+- Do not create a competing second queue.
+- Ensure offline changes are stored locally before reporting that they were saved.
+- When connectivity returns, revalidate the session and resume the existing synchronization workflow.
+- Preserve conflict detection and resolution.
+- Prevent duplicate requests and duplicate records.
+- If authentication is genuinely required before synchronization, retain the queue and request authentication without making the local workspace inaccessible.
+- Never claim that an offline mutation reached the server until the server confirms it.
+
+### 5. Investigate the actual project before editing
+
+Inspect:
+
+- The current Git diff and recent changes.
+- The Patients page and its route guards.
+- The shared navigation component.
+- Session verification and authentication handling.
+- Service worker registration, cache strategy, and offline navigation fallback.
+- IndexedDB/local storage initialization and existing stored records.
+- The offline patient workspace.
+- Mutation queue and synchronization modules.
+- Any error page or conditional rendering that replaces the normal application when the server is unavailable.
+
+Trace the actual execution path that leads to the connection-required screen. Identify which code introduced or enforces this behavior.
+
+Do not invent replacement filenames or assume a particular framework. Work with the code that actually exists.
+
+### 6. Fix the navigation regression too
+
+The navigation text and icons shrink when the Data Recovery page opens.
+
+Identify and correct the root cause in the shared layout/CSS. Keep icon sizes, font sizes, spacing, and navigation behavior consistent across Dashboard, Patients, Staff, Reports, Data Recovery, and patient profile pages.
+
+### 7. Mandatory acceptance tests
+
+Use synthetic patient data, and actually execute these tests.
+
+**Test A — Offline startup**
+1. Open HealthSys online.
+2. Establish the intended offline-access context and load the application assets.
+3. Disconnect the internet.
+4. Refresh the page.
+5. Confirm that the application shell and supported offline routes load.
+
+**Test B — Offline patient management**
+1. Open Patients while offline.
+2. Confirm that previously stored local records appear.
+3. Add a synthetic test patient.
+4. Refresh the page while still offline.
+5. Confirm that the new patient is still present and correctly marked as pending synchronization.
+
+**Test C — UI responsiveness**
+1. Disconnect the internet while HealthSys is open.
+2. Navigate between all pages permitted in offline mode.
+3. Click available controls, scroll, and open the offline workspace.
+4. Confirm that no full-screen overlay blocks the application and no infinite loading state occurs.
+
+**Test D — Reconnection and synchronization**
+1. Restore connectivity.
+2. Revalidate authentication.
+3. Synchronize queued changes.
+4. Confirm that the test patient reaches the server exactly once.
+5. Confirm that synchronization status is accurate.
+
+**Test E — Authorization**
+1. Test an established offline-access context.
+2. Test a genuinely expired session.
+3. Test a device without an established offline-access context.
+4. Verify that the intended offline functionality works without disabling server authorization or exposing records to unauthorized users.
+
+**Test F — Navigation sizing**
+Visit all main pages and verify consistent navigation typography, icon dimensions, and clickability.
+
+If any test cannot be performed, explicitly report it as NOT TESTED. Do not claim success based only on code inspection.
+
+## Constraints
+
+- Do not rebuild HealthSys.
+- Do not replace the database.
+- Do not reset the database or delete existing patient data.
+- Do not delete offline records or queued changes.
+- Do not disable authentication or server-side authorization.
+- Do not replace the offline workspace with another error page.
+- Do not make unrelated architectural changes.
+- Preserve all currently working online CRUD functionality.
+
+## Final deliverable
+
+Report:
+1. The exact cause of the offline regression.
+2. Which previous changes introduced it.
+3. The files changed to restore offline functionality.
+4. The actual offline persistence and authorization behavior.
+5. Test results, including any failures.
+6. Any remaining limitations.
+
+**Definition of done: When a previously authorized user opens HealthSys, loses connectivity, and visits Patients, the application must use its existing offline architecture to display locally available records and support implemented offline operations. A generic "Reconnect to HealthSys" page is not an acceptable substitute.**

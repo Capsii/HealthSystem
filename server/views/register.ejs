@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Register | Healthcare System</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/ui-modernization.css">
+    <script src="/js/dexie.min.js"></script>
+    <script src="/js/db.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <script src="/js/sw-register.js"></script>
+    <script src="/js/ui.js" defer></script>
+</head>
+
+<body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h2>Create Account</h2>
+                <p>Join the healthcare management system</p>
+            </div>
+
+            <% if (error) { %>
+                <div class="error-message">
+                    <%= error %>
+                </div>
+                <% } %>
+
+                    <form method="POST" action="/register">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <div class="form-group">
+                            <label for="register-username">Username</label>
+                            <input id="register-username" type="text" name="username" class="form-control" placeholder="Choose a username"
+                                required minlength="3" maxlength="32" pattern="[A-Za-z0-9._-]{3,32}" autocomplete="off" />
+                        </div>
+                        <div class="form-group">
+                            <label for="register-password">Password</label>
+                            <div class="password-control">
+                                <input id="register-password" type="password" name="password" class="form-control"
+                                    placeholder="Choose a password" required minlength="12" maxlength="72"
+                                    autocomplete="new-password" />
+                                <button type="button" class="btn-action" data-password-toggle="register-password"
+                                    aria-controls="register-password" aria-pressed="false" aria-label="Show password">Show</button>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-primary">Create Staff Account</button>
+                    </form>
+
+                    <div class="auth-footer">
+                        Already have an account? <a href="/login">Sign In</a>
+                    </div>
+        </div>
+    </div>
+</body>
+</html>

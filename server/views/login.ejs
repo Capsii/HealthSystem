@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2563eb">
+  <title>Login | Healthcare System</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/ui-modernization.css">
+  <script src="/js/dexie.min.js"></script>
+  <script src="/js/db.js"></script>
+  <script src="/js/sw-register.js"></script>
+  <script src="/js/ui.js" defer></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+</head>
+
+<body>
+  <div class="auth-container">
+    <div class="auth-card">
+      <div class="auth-header">
+        <h2>Welcome Back</h2>
+        <p>Sign in to access the healthcare system</p>
+      </div>
+
+      <% if (error) { %>
+        <div class="error-message">
+          <%= error %>
+        </div>
+        <% } %>
+
+          <form method="POST" action="/login">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="form-group">
+                <label for="login-username">Username</label>
+                <input id="login-username" type="text" name="username" class="form-control" placeholder="Enter your username" required autocomplete="username" />
+            </div>
+            <div class="form-group">
+                <label for="login-password">Password</label>
+                <input id="login-password" type="password" name="password" class="form-control" placeholder="Enter your password" required autocomplete="current-password" />
+            </div>
+            <button type="submit" class="btn-primary">Sign In</button>
+          </form>
+
+          <p class="auth-footer">Contact your administrator if you need an account.</p>
+    </div>
+  </div>
+
+</body>
+</html>
